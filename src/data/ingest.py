@@ -20,6 +20,9 @@ Write Parquet (partitioned)    ← final dataset
 from __future__ import annotations
 
 import os
+os.environ["HADOOP_HOME"] = r"C:\hadoop"
+os.environ["hadoop.home.dir"] = r"C:\hadoop"
+os.environ["PATH"] += os.pathsep + r"C:\hadoop\bin"
 from datetime import datetime
 from pathlib import Path
 
@@ -31,6 +34,8 @@ import meteostat as ms
 
 from pyspark.sql import DataFrame, SparkSession, functions as F
 from pyspark.sql.functions import pandas_udf
+
+
 
 from src.config import (
     ACCIDENTS_CSV,
@@ -101,6 +106,7 @@ def build_station_weather_parquet(spark: SparkSession) -> None:
         return
 
     stations_pdf = spark.read.parquet(str(STATIONS_PARQUET)).toPandas()
+
     start = datetime.fromisoformat(WEATHER_START)
     end   = datetime.fromisoformat(WEATHER_END)
 

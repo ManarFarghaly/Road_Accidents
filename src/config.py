@@ -49,8 +49,17 @@ def get_spark(app_name: str = "road-accidents") -> SparkSession:
         .appName(app_name)
         .master("local[*]")
         .config("spark.driver.memory", "6g")
+        .config("spark.hadoop.io.native.lib.available", "false")
         .config("spark.sql.shuffle.partitions", "64")
         .config("spark.sql.parquet.compression.codec", "snappy")
         .config("spark.sql.execution.arrow.pyspark.enabled", "true")
+        .config("spark.hadoop.fs.file.impl", "org.apache.hadoop.fs.LocalFileSystem")
+        .config("spark.hadoop.fs.file.impl.disable.cache", "true")
+            # 🚨 CRITICAL FIX: disable Hadoop native layer
+    .config("spark.hadoop.fs.file.impl", "org.apache.hadoop.fs.LocalFileSystem")
+
+    # 🚨 CRITICAL FIX: force safe file handling in Spark 4
+    .config("spark.hadoop.mapreduce.fileoutputcommitter.algorithm.version", "2")
+
         .getOrCreate()
     )
