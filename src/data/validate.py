@@ -31,7 +31,7 @@ from scipy import stats
 from scipy.stats import kurtosis, skew
 from sklearn.ensemble import IsolationForest
 import os
-from acquire import download_dataset
+from src.data.acquire import download_dataset
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
