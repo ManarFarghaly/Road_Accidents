@@ -27,7 +27,7 @@ import numpy as np
 import pandas as pd
 from tqdm import tqdm
 
-from meteostat import stations, daily
+import meteostat as ms
 
 from pyspark.sql import DataFrame, SparkSession, functions as F
 from pyspark.sql.functions import pandas_udf
@@ -51,23 +51,28 @@ from src.data.acquire import download_dataset
 # ════════════════════════════════════════════════════════════════════════════
 def build_stations_parquet(spark: SparkSession) -> None:
     """
-    Fetch all Meteostat stations and write them as Parquet.
+    Fetch all Meteostat stations in Great Britain and write them as Parquet.
 
-    We use the `meteostat` Python library.
+    We use the `meteostat` Python library (v2.x API).
+
+    meteostat v2 (Dec 2024) removed the old Stations().region("GB") API.
+    The new approach: query stations near a central UK coordinate with a
+    large radius (500 km covers all of GB), then filter by country == 'GB'.
     """
     if STATIONS_PARQUET.exists():
         print(f"[a] {STATIONS_PARQUET} already exists — skipping")
         return
 
     print("[a] fetching GB stations from Meteostat ...")
-    stations_pdf = (
-        stations
-        .region("GB")
-        .fetch()
-        .reset_index()
-        .rename(columns={"index": "id"})
-    )
-    # Keep only the columns we need downstream
+    # Central UK point (roughly Stoke-on-Trent) — 500 km radius covers
+    # all of England, Wales, Scotland
+    UK_CENTER = ms.Point(52.83, -1.83)
+    stations_pdf = ms.stations.nearby(UK_CENTER, radius=500_000, limit=500)
+
+    # Filter to GB-only stations (the radius may pick up some Irish/French ones)
+    stations_pdf = stations_pdf[stations_pdf["country"] == "GB"].copy()
+    stations_pdf = stations_pdf.reset_index()                  # station id becomes a column
+    stations_pdf = stations_pdf.rename(columns={"id": "id"})   # already named 'id' after reset
     stations_pdf = stations_pdf[["id", "latitude", "longitude"]].dropna()
     stations_pdf["id"] = stations_pdf["id"].astype(str)
 
@@ -107,7 +112,9 @@ def build_station_weather_parquet(spark: SparkSession) -> None:
     for _, row in tqdm(stations_pdf.iterrows(), total=len(stations_pdf), desc="meteostat"):
         station_id = row["id"]
         try:
-            df = daily.daily(station_id, start, end).fetch().reset_index()
+            # meteostat v2 API: ms.daily(ms.Station(id=...), start, end)
+            ts = ms.daily(ms.Station(id=station_id), start, end)
+            df = ts.fetch().reset_index()
             if df is None or df.empty:
                 continue
             df["station_id"] = station_id
