@@ -1,17 +1,17 @@
 """
-Sub-task 1 — Data Cleaning.
+Data Cleaning.
 
 Eager cleaning function that runs on the raw merged DataFrame
 *before* the Spark ML Pipeline is built.
 
 Actions (in order):
-    1a  Drop 5 columns with >85% missing (per validation report).
-    1b  Null out UK DfT sentinel values ('Data missing or out of range',
+    a  Drop 5 columns with >85% missing (per validation report).
+    b  Null out UK DfT sentinel values ('Data missing or out of range',
         'Unknown', numeric -1) so StringIndexer won't treat them as real
         categories downstream.
-    1c  Drop rows missing the target (Accident_Severity).
-    1d  Median-impute numerics; 'Unknown' fill for categoricals.
-    1e  (Documented non-action) — do not winsorize outliers; they are
+    c  Drop rows missing the target (Accident_Severity).
+    d  Median-impute numerics; 'Unknown' fill for categoricals.
+    e  (Documented non-action) — do not winsorize outliers; they are
         legitimate and tree models handle them.
 """
 from __future__ import annotations

@@ -1,18 +1,22 @@
 """
-Spark-native ingestion for the UK Road Accidents project.
+Data Ingestion Pipeline.
 
-Pipeline (run `python -m src.data.ingest`):
-    3a) Build data/interim/stations.parquet          (Meteostat GB stations)
-    3b) Build data/interim/station_weather.parquet   (daily weather per station)
-    3c) Read the raw CSVs in Spark (parallel splits)
-    3d) Attach nearest-station via broadcast + vectorized pandas_udf
-    3e) Join weather on (station_id, Date) — plain distributed Spark join
-    3f) Join vehicles on Accident_Index, write partitioned Parquet
+Weather Stations (API)         ← small reference
+        ↓
+Weather Data per station       ← heavy fetch (cached)
+        ↓
+Accidents CSV + Vehicles CSV   ← Spark ingestion
+        ↓
+Nearest station per accident   ← geo computation
+        ↓
+Join weather                   ← distributed join
+        ↓
+Join vehicles                  ← final merge
+        ↓
+Write Parquet (partitioned)    ← final dataset
 
-Stages 3a and 3b are idempotent — they no-op if their output already exists,
-so re-runs only redo the expensive main merge. Stages 3c–3f are the
-distributed "big data" work.
 """
+
 from __future__ import annotations
 
 import os
@@ -23,7 +27,7 @@ import numpy as np
 import pandas as pd
 from tqdm import tqdm
 
-from meteostat import Stations, Daily
+from meteostat import stations, daily
 
 from pyspark.sql import DataFrame, SparkSession, functions as F
 from pyspark.sql.functions import pandas_udf
@@ -43,22 +47,21 @@ from src.data.acquire import download_dataset
 
 
 # ════════════════════════════════════════════════════════════════════════════
-# Stage 3a — Stations reference table
+# Stage a — Stations reference table
 # ════════════════════════════════════════════════════════════════════════════
 def build_stations_parquet(spark: SparkSession) -> None:
     """
-    Fetch all Meteostat stations in Great Britain and write them as Parquet.
+    Fetch all Meteostat stations and write them as Parquet.
 
-    We use the `meteostat` Python library directly instead of a SQLite dump
-    so the pipeline is self-contained — no external DB file required.
+    We use the `meteostat` Python library.
     """
     if STATIONS_PARQUET.exists():
-        print(f"[3a] {STATIONS_PARQUET} already exists — skipping")
+        print(f"[a] {STATIONS_PARQUET} already exists — skipping")
         return
 
-    print("[3a] fetching GB stations from Meteostat ...")
+    print("[a] fetching GB stations from Meteostat ...")
     stations_pdf = (
-        Stations()
+        stations
         .region("GB")
         .fetch()
         .reset_index()
@@ -72,11 +75,11 @@ def build_stations_parquet(spark: SparkSession) -> None:
         .write.mode("overwrite")
         .parquet(str(STATIONS_PARQUET)))
 
-    print(f"[3a] wrote {len(stations_pdf)} stations → {STATIONS_PARQUET}")
+    print(f"[a] wrote {len(stations_pdf)} stations → {STATIONS_PARQUET}")
 
 
 # ════════════════════════════════════════════════════════════════════════════
-# Stage 3b — Per-station daily weather (one-time fetch from Meteostat API)
+# Stage b — Per-station daily weather (one-time fetch from Meteostat API)
 # ════════════════════════════════════════════════════════════════════════════
 def build_station_weather_parquet(spark: SparkSession) -> None:
     """
@@ -89,7 +92,7 @@ def build_station_weather_parquet(spark: SparkSession) -> None:
     is cached as Parquet and every subsequent run reads that parquet directly.
     """
     if STATION_WEATHER_PARQUET.exists():
-        print(f"[3b] {STATION_WEATHER_PARQUET} already exists — skipping")
+        print(f"[b] {STATION_WEATHER_PARQUET} already exists — skipping")
         return
 
     stations_pdf = spark.read.parquet(str(STATIONS_PARQUET)).toPandas()
@@ -99,12 +102,12 @@ def build_station_weather_parquet(spark: SparkSession) -> None:
     frames: list[pd.DataFrame] = []
     failed: list[str] = []
 
-    print(f"[3b] fetching daily weather for {len(stations_pdf)} stations "
+    print(f"[b] fetching daily weather for {len(stations_pdf)} stations "
           f"({WEATHER_START} → {WEATHER_END}) ...")
     for _, row in tqdm(stations_pdf.iterrows(), total=len(stations_pdf), desc="meteostat"):
         station_id = row["id"]
         try:
-            df = Daily(station_id, start, end).fetch().reset_index()
+            df = daily.daily(station_id, start, end).fetch().reset_index()
             if df is None or df.empty:
                 continue
             df["station_id"] = station_id
@@ -113,7 +116,7 @@ def build_station_weather_parquet(spark: SparkSession) -> None:
             failed.append(station_id)
             continue
 
-    print(f"[3b] fetched {len(frames)} stations ({len(failed)} failed)")
+    print(f"[b] fetched {len(frames)} stations ({len(failed)} failed)")
 
     if not frames:
         raise RuntimeError(
@@ -133,23 +136,22 @@ def build_station_weather_parquet(spark: SparkSession) -> None:
         .write.mode("overwrite")
         .parquet(str(STATION_WEATHER_PARQUET)))
 
-    print(f"[3b] wrote {len(weather_pdf):,} weather rows → {STATION_WEATHER_PARQUET}")
+    print(f"[b] wrote {len(weather_pdf):,} weather rows → {STATION_WEATHER_PARQUET}")
     del weather_pdf, frames
 
 
 # ════════════════════════════════════════════════════════════════════════════
-# Stage 3c — Parallel CSV reads
+# Stage c — Parallel CSV reads
 # ════════════════════════════════════════════════════════════════════════════
 def load_accidents_and_vehicles(
     spark: SparkSession, raw_dir: Path
 ) -> tuple[DataFrame, DataFrame]:
     """
     Read both source CSVs with Spark (distributed, parallel splits).
-    This is the core ingestion that the grader cares about — pandas is
-    NOT used here.
     """
-    print(f"[3c] reading CSVs from {raw_dir}")
+    print(f"[c] reading CSVs from {raw_dir}")
 
+    # converts string → date will be needed for the weather join later, so parse dates on read
     accidents = (
         spark.read
         .option("header", True)
@@ -167,13 +169,13 @@ def load_accidents_and_vehicles(
         .csv(str(raw_dir / VEHICLES_CSV))
     )
 
-    print(f"[3c] accidents partitions: {accidents.rdd.getNumPartitions()}, "
+    print(f"[c] accidents partitions: {accidents.rdd.getNumPartitions()}, "
           f"vehicles partitions: {vehicles.rdd.getNumPartitions()}")
     return accidents, vehicles
 
 
 # ════════════════════════════════════════════════════════════════════════════
-# Stage 3d — Nearest-station lookup (broadcast + vectorized pandas_udf)
+# Stage d — Nearest-station lookup (broadcast + vectorized pandas_udf)
 # ════════════════════════════════════════════════════════════════════════════
 def attach_nearest_station(spark: SparkSession, accidents: DataFrame) -> DataFrame:
     """
@@ -181,9 +183,30 @@ def attach_nearest_station(spark: SparkSession, accidents: DataFrame) -> DataFra
     vectorized pandas_udf that does the haversine math as a single NumPy
     (batch_size, n_stations) matrix operation per partition.
 
-    This is the replacement for the pandas 2M-row loop in the old
-    acquisition script and is the main "Spark does real work" story
-    of ingestion.
+    pandas UDF
+    A pandas UDF (user-defined function) is a vectorized function feature in Apache Spark that uses pandas and 
+    Apache Arrow to efficiently apply custom Python logic to distributed data. It enables high-performance data
+    transformations in PySpark by processing batches of rows as pandas objects instead of individual records.
+    How it works
+    A pandas UDF operates by converting Spark’s columnar data into pandas Series or DataFrames using Apache Arrow,
+    executing the user’s Python function on these batches, and then converting the results back to Spark’s 
+    internal format.This batch-based design minimizes serialization overhead and improves performance compared 
+    to traditional row-wise Python UDFs.
+
+    Logic:
+    1- Broadcast the small stations reference DataFrame to all executors (happens once per job).
+    2- Define a pandas UDF that takes batches of accident lat/lon as input, computes the haversine distance to all
+       stations in a vectorized manner, and returns the nearest station ID for each accident.
+    3- Apply this UDF to the accidents DataFrame, creating a new "station_id" column with the nearest station for each accident.
+
+    Note: This approach is efficient because the stations data is small enough to fit in memory and be broadcasted,
+    and the haversine calculation is done in a vectorized way using NumPy, which is much faster than row-wise UDFs.
+
+    - The haversine formula is a mathematical equation used to calculate the great-circle distance between two points on 
+    the surface of a sphere, given their latitudes and longitudes. It is commonly used in navigation and geospatial
+    applications to determine the shortest distance between two locations on Earth. The formula accounts for the curvature
+    of the Earth, providing an accurate distance measurement in kilometers or miles.
+
     """
     stations_pdf = spark.read.parquet(str(STATIONS_PARQUET)).toPandas()
 
@@ -215,19 +238,21 @@ def attach_nearest_station(spark: SparkSession, accidents: DataFrame) -> DataFra
         result[~valid] = None
         return result
 
-    print("[3d] attaching nearest_station via pandas_udf ...")
+    print("[d] attaching nearest_station via pandas_udf ...")
     return accidents.withColumn(
         "station_id", nearest_station(F.col("Latitude"), F.col("Longitude"))
     )
 
 
 # ════════════════════════════════════════════════════════════════════════════
-# Stage 3e — Weather join (plain two-column distributed join)
+# Stage e — Weather join (plain two-column distributed join)
 # ════════════════════════════════════════════════════════════════════════════
 def join_weather(spark: SparkSession, accidents: DataFrame) -> DataFrame:
     weather = spark.read.parquet(str(STATION_WEATHER_PARQUET))
-    print("[3e] joining weather on (station_id, Date)")
-
+    print("[e] joining weather on (station_id, Date)")
+    # Left join: 
+    # keep all accidents
+    # attach weather if exists
     return (
         accidents.alias("a")
         .join(
@@ -242,13 +267,13 @@ def join_weather(spark: SparkSession, accidents: DataFrame) -> DataFrame:
 
 
 # ════════════════════════════════════════════════════════════════════════════
-# Stage 3f — Join vehicles, write partitioned Parquet
+# Stage f — Join vehicles, write partitioned Parquet
 # ════════════════════════════════════════════════════════════════════════════
 def join_vehicles_and_write(acc_weather: DataFrame, vehicles: DataFrame) -> None:
     merged = acc_weather.join(vehicles, on="Accident_Index", how="left")
 
     n_files_per_year = os.cpu_count() or 8
-    print(f"[3f] writing {MERGED_PARQUET} "
+    print(f"[f] writing {MERGED_PARQUET} "
           f"(repartition={n_files_per_year}, partitionBy=Year)")
 
     (merged
@@ -258,16 +283,13 @@ def join_vehicles_and_write(acc_weather: DataFrame, vehicles: DataFrame) -> None
         .parquet(str(MERGED_PARQUET)))
 
 
-# ════════════════════════════════════════════════════════════════════════════
-# Orchestration
-# ════════════════════════════════════════════════════════════════════════════
+# Orchastration
 def main() -> None:
     INTERIM_DIR.mkdir(parents=True, exist_ok=True)
 
     spark = get_spark("ingest")
     spark.sparkContext.setLogLevel("WARN")
 
-    # Reference data (idempotent — only re-run if the parquet is missing)
     build_stations_parquet(spark)
     build_station_weather_parquet(spark)
 
@@ -278,7 +300,7 @@ def main() -> None:
     acc_weather = join_weather(spark, accidents)
     join_vehicles_and_write(acc_weather, vehicles)
 
-    # Quick sanity check on the written output
+    # Quick sanity check on the written output to ensure everything is as expected 
     out = spark.read.parquet(str(MERGED_PARQUET))
     print(f"[done] merged rows: {out.count():,}, columns: {len(out.columns)}")
 

@@ -15,8 +15,6 @@ import kagglehub
 from src.config import RAW_DIR
 
 KAGGLE_DATASET = "tsiaras/uk-road-safety-accidents-and-vehicles"
-
-# Files we actually need from the Kaggle dataset
 REQUIRED_FILES = ["Accident_Information.csv", "Vehicle_Information.csv"]
 
 
