@@ -1,2 +1,26 @@
-data/raw
-data/intermid
+# Data (too large for git)
+data/raw/
+data/interim/
+data/processed/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.env
+*.egg-info/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+
+# Spark
+spark-warehouse/
+metastore_db/
+derby.log
+
+# Notebooks
+.ipynb_checkpoints/

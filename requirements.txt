@@ -1,0 +1,22 @@
+# Big data framework
+pyspark>=3.5.0
+
+# Data handling
+pandas>=2.0.0
+numpy>=1.24.0
+pyarrow>=14.0.0
+
+# Data acquisition
+kagglehub>=0.2.0
+
+# Weather enrichment (Meteostat API)
+meteostat>=1.6.5
+
+# Validation script dependencies
+scipy>=1.11.0
+scikit-learn>=1.3.0
+matplotlib>=3.7.0
+reportlab>=4.0.0
+
+# Progress bars
+tqdm>=4.66.0
