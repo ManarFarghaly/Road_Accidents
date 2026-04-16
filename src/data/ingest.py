@@ -19,7 +19,12 @@ Write Parquet (partitioned)    ← final dataset
 
 from __future__ import annotations
 
+import json
 import os
+import socket
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
 os.environ["HADOOP_HOME"] = r"C:\hadoop"
 os.environ["hadoop.home.dir"] = r"C:\hadoop"
 os.environ["PATH"] += os.pathsep + r"C:\hadoop\bin"
@@ -31,6 +36,9 @@ import pandas as pd
 from tqdm import tqdm
 
 import meteostat as ms
+
+# Global socket timeout — prevents urllib from hanging for minutes on bad connections
+socket.setdefaulttimeout(30)
 
 from pyspark.sql import DataFrame, SparkSession, functions as F
 from pyspark.sql.functions import pandas_udf
@@ -91,45 +99,106 @@ def build_stations_parquet(spark: SparkSession) -> None:
 # ════════════════════════════════════════════════════════════════════════════
 # Stage b — Per-station daily weather (one-time fetch from Meteostat API)
 # ════════════════════════════════════════════════════════════════════════════
+def _fetch_one_station(
+    station_id: str,
+    start: datetime,
+    end: datetime,
+    max_retries: int = 3,
+) -> pd.DataFrame | None:
+    """
+    Fetch daily weather for a single station with retry + exponential backoff.
+    Returns a DataFrame on success, or None on permanent failure.
+    """
+    for attempt in range(1, max_retries + 1):
+        try:
+            ts = ms.daily(ms.Station(id=station_id), start, end)
+            df = ts.fetch().reset_index()
+            if df is None or df.empty:
+                return None
+            df["station_id"] = station_id
+            return df
+        except Exception:
+            if attempt < max_retries:
+                wait = 2 ** attempt          # 2s, 4s, 8s
+                time.sleep(wait)
+            else:
+                return None
+
+
+# Path to a JSON file tracking which stations have been fetched already
+# so that re-runs continue from where they stopped instead of restarting.
+_PROGRESS_FILE = INTERIM_DIR / "_weather_progress.json"
+_PARTIAL_FILE  = INTERIM_DIR / "_weather_partial.pkl"
+
+
 def build_station_weather_parquet(spark: SparkSession) -> None:
     """
     For each GB station, fetch daily weather over the accidents date range
     (2005-01-01 to 2017-12-31), flatten into one long DataFrame, and write
     as Parquet.
 
-    This is a pandas loop because the Meteostat API is I/O-bound (HTTP calls),
-    not CPU-bound — Spark would not make it faster. It runs ONCE; the result
-    is cached as Parquet and every subsequent run reads that parquet directly.
+    Resilience features (because Meteostat can be flaky):
+      - 30-second socket timeout (set globally above).
+      - 3 retries with exponential backoff per station.
+      - Progress is saved to disk after every batch of 10 stations.
+        If the script is killed or crashes, re-running it continues
+        from the last saved checkpoint instead of re-fetching everything.
+      - 4 parallel threads for the I/O-bound HTTP fetches (~4x speedup).
     """
     if STATION_WEATHER_PARQUET.exists():
         print(f"[b] {STATION_WEATHER_PARQUET} already exists — skipping")
         return
 
     stations_pdf = spark.read.parquet(str(STATIONS_PARQUET)).toPandas()
-
     start = datetime.fromisoformat(WEATHER_START)
     end   = datetime.fromisoformat(WEATHER_END)
 
+    # ── Resume from partial progress if available ──────────────────────
+    done_ids: set[str] = set()
     frames: list[pd.DataFrame] = []
+
+    if _PARTIAL_FILE.exists() and _PROGRESS_FILE.exists():
+        with open(_PROGRESS_FILE) as f:
+            done_ids = set(json.load(f))
+        frames = [pd.read_pickle(_PARTIAL_FILE)]
+        print(f"[b] resuming — {len(done_ids)} stations already cached")
+
+    remaining = stations_pdf[~stations_pdf["id"].isin(done_ids)]
     failed: list[str] = []
 
-    print(f"[b] fetching daily weather for {len(stations_pdf)} stations "
-          f"({WEATHER_START} → {WEATHER_END}) ...")
-    for _, row in tqdm(stations_pdf.iterrows(), total=len(stations_pdf), desc="meteostat"):
-        station_id = row["id"]
-        try:
-            # meteostat v2 API: ms.daily(ms.Station(id=...), start, end)
-            ts = ms.daily(ms.Station(id=station_id), start, end)
-            df = ts.fetch().reset_index()
-            if df is None or df.empty:
-                continue
-            df["station_id"] = station_id
-            frames.append(df)
-        except Exception:
-            failed.append(station_id)
-            continue
+    print(f"[b] fetching daily weather for {len(remaining)} stations "
+          f"({WEATHER_START} → {WEATHER_END})  [4 threads, 3 retries each] ...")
 
-    print(f"[b] fetched {len(frames)} stations ({len(failed)} failed)")
+    # ── Parallel fetch with ThreadPoolExecutor ─────────────────────────
+    batch_count = 0
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        futures = {
+            pool.submit(_fetch_one_station, row["id"], start, end): row["id"]
+            for _, row in remaining.iterrows()
+        }
+        with tqdm(total=len(futures), desc="meteostat") as pbar:
+            for future in as_completed(futures):
+                station_id = futures[future]
+                try:
+                    df = future.result()
+                    if df is not None:
+                        frames.append(df)
+                    else:
+                        failed.append(station_id)
+                except Exception:
+                    failed.append(station_id)
+
+                done_ids.add(station_id)
+                batch_count += 1
+                pbar.update(1)
+
+                # Save progress every 10 stations
+                if batch_count % 10 == 0:
+                    _save_partial(frames, done_ids)
+
+    # ── Final save ─────────────────────────────────────────────────────
+    print(f"[b] fetched {len(frames)} station chunks "
+          f"({len(failed)} permanently failed)")
 
     if not frames:
         raise RuntimeError(
@@ -140,17 +209,33 @@ def build_station_weather_parquet(spark: SparkSession) -> None:
     weather_pdf = pd.concat(frames, ignore_index=True)
     weather_pdf["time"] = pd.to_datetime(weather_pdf["time"]).dt.date
 
-    # Cast any Int64/Float64 NaN-bearing cols to float (Spark can't handle pandas NA)
+    # Cast NaN-bearing cols to float64 (Spark can't handle pandas nullable Int64)
     for col in weather_pdf.columns:
         if col not in ("station_id", "time"):
-            weather_pdf[col] = pd.to_numeric(weather_pdf[col], errors="coerce").astype("float64")
+            weather_pdf[col] = (
+                pd.to_numeric(weather_pdf[col], errors="coerce")
+                .astype("float64")
+            )
 
     (spark.createDataFrame(weather_pdf)
         .write.mode("overwrite")
         .parquet(str(STATION_WEATHER_PARQUET)))
 
     print(f"[b] wrote {len(weather_pdf):,} weather rows → {STATION_WEATHER_PARQUET}")
+
+    # Clean up progress files — they're no longer needed
+    _PROGRESS_FILE.unlink(missing_ok=True)
+    _PARTIAL_FILE.unlink(missing_ok=True)
+
     del weather_pdf, frames
+
+
+def _save_partial(frames: list[pd.DataFrame], done_ids: set[str]) -> None:
+    """Save partial weather data + list of done station IDs to disk."""
+    if frames:
+        pd.concat(frames, ignore_index=True).to_pickle(str(_PARTIAL_FILE))
+    with open(_PROGRESS_FILE, "w") as f:
+        json.dump(list(done_ids), f)
 
 
 # ════════════════════════════════════════════════════════════════════════════

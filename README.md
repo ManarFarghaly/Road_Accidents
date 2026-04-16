@@ -32,3 +32,4 @@ for ingesting
 ```
    $  python -m src.data.ingest
 ``` 
+Please make sure you installed spark version 4.0.2 with Pre-built for Hadoop 3.4 or later and the bin folder of hadoop has the .dll and .exe 

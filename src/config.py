@@ -37,20 +37,17 @@ def get_spark(app_name: str = "road-accidents") -> SparkSession:
     """
     Build (or return the existing) Spark session in pseudo-distributed mode.
 
-    local[*]  — * use every available core as a separate JVM worker thread.
-    6 g driver memory — enough to hold the broadcast stations table and
-                        materialize small collect()s without OOM.
-    Aphache Arrow — faster Pandas UDFs and collect()s , Spark ↔ pandas conversions data transfer
-    shuffle_partitions ≈ 4–8 × number of cores — avoid too many small tasks and too much overhead, but still allow parallelism.
-    default middle ground ram is 8g so we set it to 6g to leave some headroom for the OS and other processes.
+    local[*]  — use every available core as a separate JVM worker thread.
+    4 g driver memory — leaves ~4 GB for the OS + Python on an 8 GB machine.
+    Apache Arrow — faster pandas UDF and Spark-to-pandas conversions.
+    shuffle_partitions = 32 — ~4x cores on an i5 (avoids overhead of 200 default).
     """
     return (
         SparkSession.builder
         .appName(app_name)
         .master("local[*]")
-        .config("spark.driver.memory", "6g")
-        .config("spark.hadoop.io.native.lib.available", "false")
-        .config("spark.sql.shuffle.partitions", "64")
+        .config("spark.driver.memory", "4g")
+        .config("spark.sql.shuffle.partitions", "32")
         .config("spark.sql.parquet.compression.codec", "snappy")
         .config("spark.sql.execution.arrow.pyspark.enabled", "true")
         .config("spark.hadoop.fs.file.impl", "org.apache.hadoop.fs.LocalFileSystem")
