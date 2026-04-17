@@ -47,6 +47,7 @@ from pyspark.sql.functions import pandas_udf
 
 from src.config import (
     ACCIDENTS_CSV,
+    ACCIDENTS_WITH_STATION_PARQUET,
     INTERIM_DIR,
     MERGED_PARQUET,
     STATIONS_PARQUET,
@@ -422,7 +423,23 @@ def main() -> None:
     # Main distributed pipeline
     raw_dir = download_dataset()
     accidents, vehicles = load_accidents_and_vehicles(spark, raw_dir)
-    accidents   = attach_nearest_station(spark, accidents)
+
+    # ── Checkpoint after the pandas_udf ────────────────────────────────
+    # Writing accidents+station_id to parquet here isolates the expensive
+    # (and Windows-fragile) nearest-station UDF stage from the later
+    # joins. If stage [e]/[f] crash, we don't re-run the 30-minute UDF;
+    # we just re-read this checkpoint.
+    if not ACCIDENTS_WITH_STATION_PARQUET.exists():
+        print("[d] running nearest-station UDF and checkpointing ...")
+        accidents = attach_nearest_station(spark, accidents)
+        (accidents
+            .write.mode("overwrite")
+            .parquet(str(ACCIDENTS_WITH_STATION_PARQUET)))
+        print(f"[d] checkpoint written → {ACCIDENTS_WITH_STATION_PARQUET}")
+    else:
+        print(f"[d] checkpoint exists — skipping UDF, reading {ACCIDENTS_WITH_STATION_PARQUET}")
+
+    accidents   = spark.read.parquet(str(ACCIDENTS_WITH_STATION_PARQUET))
     acc_weather = join_weather(spark, accidents)
     join_vehicles_and_write(acc_weather, vehicles)
 

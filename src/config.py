@@ -21,6 +21,9 @@ REPORTS_DIR   = PROJECT_ROOT / "reports"
 # Ingestion artifacts 
 STATIONS_PARQUET        = INTERIM_DIR / "stations.parquet"
 STATION_WEATHER_PARQUET = INTERIM_DIR / "station_weather.parquet"
+# Checkpoint after the pandas_udf stage — avoids re-running the expensive
+# 2M-row nearest-station UDF if the weather/vehicles join later crashes.
+ACCIDENTS_WITH_STATION_PARQUET = INTERIM_DIR / "accidents_with_station.parquet"
 MERGED_PARQUET          = INTERIM_DIR / "merged.parquet"
 
 ACCIDENTS_CSV = "Accident_Information.csv"
@@ -50,6 +53,14 @@ def get_spark(app_name: str = "road-accidents") -> SparkSession:
         .config("spark.sql.shuffle.partitions", "32")
         .config("spark.sql.parquet.compression.codec", "snappy")
         .config("spark.sql.execution.arrow.pyspark.enabled", "true")
+        # Smaller Arrow batches — pandas_udf workers OOM/crash less often on
+        # Windows + Py3.10 with the default 10 000-row batch. 2 000 keeps
+        # per-batch peak memory small while still being vectorized.
+        .config("spark.sql.execution.arrow.maxRecordsPerBatch", "2000")
+        # When a Python worker crashes, surface the real traceback instead
+        # of just "Connection reset by peer". Essential for debugging UDFs.
+        .config("spark.sql.execution.pyspark.udf.faulthandler.enabled", "true")
+        .config("spark.python.worker.faulthandler.enabled", "true")
         .config("spark.hadoop.fs.file.impl", "org.apache.hadoop.fs.LocalFileSystem")
         .config("spark.hadoop.fs.file.impl.disable.cache", "true")
     .config("spark.hadoop.mapreduce.fileoutputcommitter.algorithm.version", "2")
