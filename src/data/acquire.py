@@ -34,7 +34,20 @@ def download_dataset() -> Path:
         return RAW_DIR
 
     print(f"[acquire] downloading {KAGGLE_DATASET} from Kaggle ...")
-    kaggle_cache = Path(kagglehub.dataset_download(KAGGLE_DATASET))
+    # kagglehub renamed its public API between 0.1 and 0.2. Try the current
+    # one first, fall back to older names so old pinned envs still work.
+    # If nothing works, tell the user clearly to upgrade.
+    for fn_name in ("dataset_download", "datasets_download", "download"):
+        fn = getattr(kagglehub, fn_name, None)
+        if callable(fn):
+            kaggle_cache = Path(fn(KAGGLE_DATASET))
+            break
+    else:
+        raise RuntimeError(
+            "Your installed kagglehub is too old — none of "
+            "(dataset_download, datasets_download, download) exist. "
+            "Fix: pip install -U kagglehub"
+        )
     print(f"[acquire] Kaggle cache: {kaggle_cache}")
 
     for fname in REQUIRED_FILES:
