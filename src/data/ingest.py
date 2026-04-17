@@ -254,7 +254,7 @@ def load_accidents_and_vehicles(
         spark.read
         .option("header", True)
         .option("inferSchema", True)
-        .option("encoding", "iso-8859-1")      # Spark 4 rejects "latin1"
+        .option("encoding", "iso-8859-1")      
         .csv(str(raw_dir / ACCIDENTS_CSV))
         .withColumn("Date", F.to_date("Date", "yyyy-MM-dd"))
     )
