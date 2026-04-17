@@ -368,7 +368,7 @@ def join_weather(spark: SparkSession, accidents: DataFrame) -> DataFrame:
 # Stage f — Join vehicles, write partitioned Parquet
 # ════════════════════════════════════════════════════════════════════════════
 def join_vehicles_and_write(acc_weather: DataFrame, vehicles: DataFrame) -> None:
-    merged = acc_weather.join(vehicles, on="Accident_Index", how="left")
+    merged = (acc_weather.join(vehicles, on="Accident_Index", how="left").drop(vehicles["Year"]))
 
     n_files_per_year = os.cpu_count() or 8
     print(f"[f] writing {MERGED_PARQUET} "
