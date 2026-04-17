@@ -8,23 +8,35 @@ the Spark ML Pipeline is built. Addresses every finding from the
 Order of operations (each step is idempotent and commented with its
 MCAR/MAR/MNAR justification where relevant):
 
-    a  Drop 5 columns with >85 % missing     (pure noise)
-    b  Null out UK DfT sentinel strings      ("Data missing or out of range", etc.)
-    c  Null out numeric -1 "unknown" codes
-    d  Snap Speed_limit outliers to the nearest UK legal limit
-    e  Drop rows where required fields are null
-          - Accident_Severity  (target)
-          - Latitude/Longitude (required for geospatial + features)
-    f  Structural fill for 2nd_Road_Class   ("Not applicable" — single-road accidents)
-    g  Median-impute numerics                (MAR, robust to skew)
-    h  Mode-by-group impute for `model`      (model depends on make)
-    i  "Unknown" fill for remaining cats     (MAR / MNAR — give them their own level)
+    a   Drop 6 noise cols (>85 % missing OR 81 %-dominated by "Unclassified")
+    a'  Drop target-leakage cols (Number_of_Casualties — STATS19 defines
+        severity FROM casualty counts; also unavailable at prediction time)
+    b   Null out UK DfT sentinel strings ("Data missing or out of range", etc.)
+    c   Null out numeric -1 "unknown" codes
+    d   Snap Speed_limit outliers to the nearest UK legal limit
+    e   Enforce validity bounds (Lat/Lon UK box, Engine_Capacity 50-8000cc,
+        Age_of_Vehicle 0-100, Number_of_Vehicles ≥1) — real DATA ERRORS → NULL
+    e'  Drop rows missing required fields (Severity target + Lat/Lon)
+    g   Median-impute remaining numeric NULLs (MAR, robust to skew)
+    h   Mode-by-group impute for `model` (model depends on make)
+    i   "Unknown" fill for remaining cats (MAR / MNAR — own level)
 
-Outliers (IQR flagged 470 k in Number_of_Casualties, 47 k in Number_of_Vehicles):
-kept as-is. They are legitimate (a coach crash really can have 30 casualties),
-tree models (RF/GBT) are outlier-robust, and StandardScaler re-centers LR inputs.
-Winsorizing would destroy real severe-accident signal — exactly the minority class
-we want the classifier to catch. Documented as a deliberate non-action.
+STATISTICAL OUTLIERS (IQR flagged 47 k in Number_of_Vehicles) are kept as-is.
+They are legitimate (a coach crash really can have 30 casualties), tree models
+(RF/GBT) are outlier-robust, and StandardScaler re-centers LR inputs. Note the
+distinction vs step e above: "data error" = physically/legally impossible
+value (null out); "outlier" = extreme-but-real observation (keep).
+
+CLASS IMBALANCE is documented here but NOT handled in this module. The target
+distribution is roughly Slight 85 % / Serious 14 % / Fatal 1 %. Fatal is
+60× rarer than Slight — the model will learn "predict Slight" and score 85 %
+accuracy while being useless. Remedies (pick one, Member 3's decision):
+   • classWeightCol in LR/GBT   ← cheapest, no data duplication
+   • random undersampling of the majority class (see `rebalance_undersample`)
+   • SMOTE-style oversampling (Spark doesn't ship it; imblearn on sampled df)
+We provide `rebalance_undersample()` as an optional helper; use it only on
+the TRAINING split, never on test — resampling the test set gives wrong
+performance numbers.
 """
 from __future__ import annotations
 
@@ -32,16 +44,32 @@ from pyspark.sql import DataFrame, Window, functions as F
 from pyspark.ml.feature import Imputer
 
 
-# ─── a. columns with >85 % missing  ───────────────────────────────────────
-# All five are MNAR (only populated for specific accident types) but at
-# >85 % missing they carry almost no signal and would dominate the
-# "Unknown" bucket in one-hot encoding.
+# ─── a. columns with so much missing/garbage they carry no signal ─────────
+# First five are MNAR (only populated for specific accident types) at >85 %
+# missing. 2nd_Road_Class looks different but resolves the same way:
+# 41 % NA  + 40 % "Unclassified" = 81 % uninformative — the remaining 19 %
+# spread across six classes carries too little signal to justify a column.
 HIGH_MISSING_COLS = [
     "Carriageway_Hazards",            # 98.07 %
     "Special_Conditions_at_Site",     # 97.45 %
     "Hit_Object_in_Carriageway",      # 95.89 %
     "Hit_Object_off_Carriageway",     # 91.39 %
     "Skidding_and_Overturning",       # 87.19 %
+    "2nd_Road_Class",                 # 41 % NA + 40 % "Unclassified" = 81 % noise
+]
+
+# ─── a'. target-leakage columns — drop before training ────────────────────
+# UK STATS19 defines Accident_Severity DIRECTLY from casualty counts:
+#     Fatal   = at least one fatal casualty
+#     Serious = at least one serious injury
+#     Slight  = only slight injuries
+# So Number_of_Casualties is essentially the target written in another
+# column — a model using it achieves near-perfect accuracy by cheating.
+# It is also NOT KNOWN AT PREDICTION TIME (a traffic-safety app predicts
+# severity BEFORE the accident happens), which is what your mentor
+# flagged. Dropping it is mandatory, not a judgement call.
+LEAKAGE_COLS = [
+    "Number_of_Casualties",
 ]
 
 # ─── b. UK DfT sentinel string values meaning "missing" ──────────────────
@@ -69,13 +97,26 @@ REQUIRED_COLS = [
     "Longitude",           # same
 ]
 
-# ─── f. structurally-missing categorical ─────────────────────────────────
-# 2nd_Road_Class is 41 % missing because **single-road accidents have no
-# second road** — this is MNAR / structural, not random. Filling with
-# "Unknown" would merge real unknowns with "not applicable" and mask the
-# signal. Use an explicit category instead.
-STRUCTURAL_NA_CATS = {
-    "2nd_Road_Class": "Not applicable",
+# ─── f. validity bounds — real data errors, not statistical outliers ─────
+# These are physically/legally impossible values (not extreme-but-real
+# observations like a 30-casualty coach crash). We NULL them out here so
+# the imputer replaces them with the median; leaving them distorts means
+# and scalers.
+#
+#   Latitude/Longitude : UK geographic bounds
+#   Engine_Capacity    : 50 cc (moped) … 8 000 cc (heavy truck)
+#   Age_of_Vehicle     : 0 … 100 years
+#   Number_of_Vehicles : 1 (must be ≥1) … 100 (safe upper bound)
+#
+# Note: this is orthogonal to statistical-outlier handling. Skewed-but-
+# legitimate values (IQR-flagged large casualty counts, rare high engine
+# capacities) are preserved — they carry real signal about severe events.
+VALIDITY_BOUNDS = {
+    "Latitude":             (49.0, 61.0),
+    "Longitude":            (-8.0, 2.0),
+    "Engine_Capacity_.CC.": (50.0, 8000.0),
+    "Age_of_Vehicle":       (0.0, 100.0),
+    "Number_of_Vehicles":   (1.0, 100.0),
 }
 
 # ─── g. numerics to median-impute ────────────────────────────────────────
@@ -216,8 +257,11 @@ def clean(df: DataFrame) -> DataFrame:
     return the cleaned DataFrame. Called once by Member 3 before
     constructing their Spark ML Pipeline.
     """
-    # a ─ drop hopelessly-empty columns
-    to_drop = [c for c in HIGH_MISSING_COLS if c in df.columns]
+    # a ─ drop hopelessly-empty columns + target-leakage columns
+    to_drop = [
+        c for c in HIGH_MISSING_COLS + LEAKAGE_COLS
+        if c in df.columns
+    ]
     if to_drop:
         df = df.drop(*to_drop)
 
@@ -244,15 +288,21 @@ def clean(df: DataFrame) -> DataFrame:
     if "Speed_limit" in df.columns:
         df = _snap_speed_limit(df)
 
-    # e ─ drop rows missing any REQUIRED column (target + geo)
+    # e ─ enforce validity bounds — real data errors → NULL
+    # (applied BEFORE the required-column drop so Lat/Lon garbage like 0.0
+    # or 9999 gets nulled first, then the row is dropped if unrecoverable.)
+    for col, (lo, hi) in VALIDITY_BOUNDS.items():
+        if col in df.columns:
+            df = df.withColumn(
+                col,
+                F.when((F.col(col) < lo) | (F.col(col) > hi), None)
+                 .otherwise(F.col(col)),
+            )
+
+    # e' ─ drop rows missing any REQUIRED column (target + geo)
     for c in REQUIRED_COLS:
         if c in df.columns:
             df = df.filter(F.col(c).isNotNull())
-
-    # f ─ structural NA fill (2nd_Road_Class has a real "not applicable" meaning)
-    for c, fill_value in STRUCTURAL_NA_CATS.items():
-        if c in df.columns:
-            df = df.fillna(fill_value, subset=[c])
 
     # g ─ numeric median imputation (MAR, robust to skew)
     num_present = [c for c in NUM_IMPUTE_COLS if c in df.columns]
@@ -274,3 +324,50 @@ def clean(df: DataFrame) -> DataFrame:
         df = df.fillna("Unknown", subset=cat_present)
 
     return df
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# Optional helper — class-imbalance rebalancing (training split only!)
+# ══════════════════════════════════════════════════════════════════════════
+def rebalance_undersample(
+    df: DataFrame,
+    label_col: str = "Accident_Severity",
+    ratio: float = 3.0,
+    seed: int = 42,
+) -> DataFrame:
+    """
+    Undersample the majority class so that the largest class is at most
+    `ratio` × the smallest class. With the default ratio=3 the target
+    distribution becomes roughly Slight:Serious:Fatal = 3:3:1 instead of
+    85:14:1 — still slightly imbalanced (so priors aren't totally wrong)
+    but close enough for LR/RF to learn minority patterns.
+
+    IMPORTANT: call this ONLY on the training split, never on test.
+    Resampling the test set produces misleading performance metrics.
+
+    Example:
+        train, test = cleaned.randomSplit([0.8, 0.2], seed=42)
+        train_balanced = rebalance_undersample(train)
+        model = pipeline.fit(train_balanced)
+        metrics = evaluator.evaluate(model.transform(test))   # unresampled!
+    """
+    counts = {r[label_col]: r["count"]
+              for r in df.groupBy(label_col).count().collect()}
+    if not counts:
+        return df
+
+    min_count = min(counts.values())
+    target = int(min_count * ratio)
+
+    parts = []
+    for cls, n in counts.items():
+        frac = min(1.0, target / n)
+        parts.append(
+            df.filter(F.col(label_col) == cls).sample(frac, seed=seed)
+        )
+
+    # Union all the per-class samples
+    out = parts[0]
+    for p in parts[1:]:
+        out = out.unionByName(p)
+    return out

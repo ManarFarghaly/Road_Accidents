@@ -902,6 +902,35 @@ def check_relationships(acc: pd.DataFrame, log_lines: list, report: dict):
     if not high_corr:
         log("\n  [PASS] No high-correlation pairs found (threshold |r| > 0.85)", log_lines)
 
+    # ── Correlation heatmap PNG ────────────────────────────────────────────
+    # Saves reports/correlation_heatmap.png for the PDF + visual QA.
+    try:
+        REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+        fig, ax = plt.subplots(figsize=(7, 6))
+        im = ax.imshow(pearson_m.values, cmap="coolwarm", vmin=-1, vmax=1)
+        ax.set_xticks(range(len(NUM_COLS)))
+        ax.set_xticklabels(NUM_COLS, rotation=45, ha="right", fontsize=8)
+        ax.set_yticks(range(len(NUM_COLS)))
+        ax.set_yticklabels(NUM_COLS, fontsize=8)
+        # Annotate each cell with the Pearson value
+        for i in range(len(NUM_COLS)):
+            for j in range(len(NUM_COLS)):
+                val = pearson_m.iloc[i, j]
+                txt_color = "white" if abs(val) > 0.5 else "black"
+                ax.text(j, i, f"{val:.2f}",
+                        ha="center", va="center",
+                        color=txt_color, fontsize=8)
+        ax.set_title("Pearson correlation — accident numerics", fontsize=11)
+        fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+        plt.tight_layout()
+        heatmap_path = REPORTS_DIR / "correlation_heatmap.png"
+        plt.savefig(heatmap_path, dpi=130)
+        plt.close(fig)
+        dim["heatmap_path"] = str(heatmap_path)
+        log(f"\n  [SAVED] {heatmap_path}", log_lines)
+    except Exception as e:
+        log(f"\n  [WARN] heatmap generation failed: {e!r}", log_lines)
+
     report["dimensions"]["relationships"] = dim
 
 
@@ -1091,6 +1120,23 @@ def generate_pdf_report(pdf_path, total, report,log_lines):
     #         elements.append(Paragraph(issue_text, styles['Normal']))
     #         elements.append(Spacer(1, 0.1*inch))
     
+    # ── Correlation heatmap page ─────────────────────────
+    rel = report.get("dimensions", {}).get("relationships", {})
+    heatmap_path = rel.get("heatmap_path")
+    if heatmap_path and Path(heatmap_path).exists():
+        elements.append(PageBreak())
+        elements.append(Paragraph("Correlation Heatmap", styles['Heading2']))
+        elements.append(Spacer(1, 0.15 * inch))
+        elements.append(Image(heatmap_path, width=6 * inch, height=5 * inch))
+        high = rel.get("high_correlation_pairs", [])
+        if high:
+            elements.append(Spacer(1, 0.15 * inch))
+            elements.append(Paragraph(
+                f"<b>High-correlation pairs (|r| &gt; 0.85):</b> {', '.join(high)} "
+                f"— consider dropping one per pair in feature selection.",
+                styles['Normal']
+            ))
+
     # ── Histogram pages ──────────────────────────────────
     dist = report.get("dimensions", {}).get("distribution", {})
     hist_res   = dist.get("histograms", {})

@@ -77,15 +77,19 @@ def build_stations_parquet(spark: SparkSession) -> None:
         return
 
     print("[a] fetching GB stations from Meteostat ...")
-    # Central UK point (roughly Stoke-on-Trent) — 500 km radius covers
-    # all of England, Wales, Scotland
-    UK_CENTER = ms.Point(52.83, -1.83)
-    stations_pdf = ms.stations.nearby(UK_CENTER, radius=500_000, limit=500)
+    # Meteostat had a breaking API change in Dec 2024 (v1 → v2). Try v2 first,
+    # fall back to v1 so the code works on both road_env (Py3.10 / v1) and
+    # newer Python envs that pulled v2.
+    try:
+        # v2 API: ms.stations.nearby(point, radius, limit)
+        UK_CENTER = ms.Point(52.83, -1.83)
+        stations_pdf = ms.stations.nearby(UK_CENTER, radius=500_000, limit=500)
+        stations_pdf = stations_pdf[stations_pdf["country"] == "GB"].copy()
+    except AttributeError:
+        # v1 API: Stations().region("GB").fetch()
+        stations_pdf = ms.Stations().region("GB").fetch()
 
-    # Filter to GB-only stations (the radius may pick up some Irish/French ones)
-    stations_pdf = stations_pdf[stations_pdf["country"] == "GB"].copy()
     stations_pdf = stations_pdf.reset_index()                  # station id becomes a column
-    stations_pdf = stations_pdf.rename(columns={"id": "id"})   # already named 'id' after reset
     stations_pdf = stations_pdf[["id", "latitude", "longitude"]].dropna()
     stations_pdf["id"] = stations_pdf["id"].astype(str)
 
@@ -111,7 +115,11 @@ def _fetch_one_station(
     """
     for attempt in range(1, max_retries + 1):
         try:
-            ts = ms.daily(ms.Station(id=station_id), start, end)
+            # v2 API first, fall back to v1 on AttributeError
+            try:
+                ts = ms.daily(ms.Station(id=station_id), start, end)
+            except AttributeError:
+                ts = ms.Daily(station_id, start, end)     # v1
             df = ts.fetch().reset_index()
             if df is None or df.empty:
                 return None
@@ -119,8 +127,8 @@ def _fetch_one_station(
             return df
         except Exception:
             if attempt < max_retries:
-                wait = 2 ** attempt          # 2s, 4s, 8s
-                time.sleep(wait)
+                # 5s, 10s, 20s — longer than before; Meteostat is rate-limiting
+                time.sleep(5 * (2 ** (attempt - 1)))
             else:
                 return None
 
@@ -167,11 +175,13 @@ def build_station_weather_parquet(spark: SparkSession) -> None:
     failed: list[str] = []
 
     print(f"[b] fetching daily weather for {len(remaining)} stations "
-          f"({WEATHER_START} → {WEATHER_END})  [4 threads, 3 retries each] ...")
+          f"({WEATHER_START} → {WEATHER_END})  [2 threads, 3 retries each] ...")
 
     # ── Parallel fetch with ThreadPoolExecutor ─────────────────────────
+    # Reduced to 2 workers — Meteostat's CDN aggressively rate-limits and
+    # 4+ concurrent connections trigger ConnectionReset bursts.
     batch_count = 0
-    with ThreadPoolExecutor(max_workers=4) as pool:
+    with ThreadPoolExecutor(max_workers=2) as pool:
         futures = {
             pool.submit(_fetch_one_station, row["id"], start, end): row["id"]
             for _, row in remaining.iterrows()
@@ -346,6 +356,18 @@ def attach_nearest_station(spark: SparkSession, accidents: DataFrame) -> DataFra
 # Stage e — Weather join (plain two-column distributed join)
 # ════════════════════════════════════════════════════════════════════════════
 def join_weather(spark: SparkSession, accidents: DataFrame) -> DataFrame:
+    # If weather fetch was skipped (Meteostat unreliable), attach NULL columns
+    # so downstream code keeps the same schema and Imputer fills them later.
+    if not STATION_WEATHER_PARQUET.exists():
+        print("[e] no weather parquet — attaching NULL weather columns (median-imputed later)")
+        for col, dtype in [
+            ("tavg", "double"), ("tmin", "double"), ("tmax", "double"),
+            ("prcp", "double"), ("snow", "double"), ("wspd", "double"),
+            ("pres", "double"),
+        ]:
+            accidents = accidents.withColumn(col, F.lit(None).cast(dtype))
+        return accidents
+
     weather = spark.read.parquet(str(STATION_WEATHER_PARQUET))
     print("[e] joining weather on (station_id, Date)")
     # Left join: 
@@ -389,7 +411,13 @@ def main() -> None:
     spark.sparkContext.setLogLevel("WARN")
 
     build_stations_parquet(spark)
-    build_station_weather_parquet(spark)
+    try:
+        build_station_weather_parquet(spark)
+    except Exception as e:
+        # Meteostat's CDN is unreliable. If fetching weather fails
+        # catastrophically, don't kill the whole pipeline — join_weather()
+        # below will fall back to NULL weather columns.
+        print(f"[b] WARNING: weather fetch failed ({e!r}); continuing without weather")
 
     # Main distributed pipeline
     raw_dir = download_dataset()

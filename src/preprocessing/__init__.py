@@ -21,7 +21,7 @@ Usage (what Member 3's code looks like):
 from pyspark.ml import PipelineStage
 
 from src.preprocessing.assemble import build_assembler_stage
-from src.preprocessing.clean import clean
+from src.preprocessing.clean import clean, rebalance_undersample
 from src.preprocessing.encode import build_encoding_stages
 from src.preprocessing.scale import build_scaling_stages
 
@@ -41,4 +41,4 @@ def build_preprocessing_stages() -> list[PipelineStage]:
     return scale_stages + encode_stages + [assembler]
 
 
-__all__ = ["clean", "build_preprocessing_stages"]
+__all__ = ["clean", "rebalance_undersample", "build_preprocessing_stages"]
