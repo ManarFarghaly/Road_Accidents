@@ -14,7 +14,7 @@ pyarrow==14.0.2
 # =========================
 # Data acquisition
 # =========================
-kagglehub==0.2.5
+kagglehub==0.2.7
 
 # =========================
 # Weather enrichment API
