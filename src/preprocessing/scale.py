@@ -1,13 +1,8 @@
 """
-Sub-task 3 — Numerical Scaling.
+Numerical Scaling.
 
 Builds an intermediate VectorAssembler + StandardScaler pair of
 pipeline stages that produce the `numeric_scaled` vector column.
-
-Why StandardScaler and not MinMaxScaler:
-    Logistic Regression (trained by Member 3) benefits most from
-    zero-mean / unit-variance features; tree models are indifferent.
-    StandardScaler is also what the project proposal promised.
 
 Why an intermediate VectorAssembler:
     Spark's StandardScaler operates on a vector column, not individual
@@ -18,7 +13,6 @@ from __future__ import annotations
 
 from pyspark.ml import PipelineStage
 from pyspark.ml.feature import StandardScaler, VectorAssembler
-
 
 NUMERIC_COLS = [
     # Accident numerics
@@ -47,7 +41,7 @@ def build_scaling_stages() -> tuple[list[PipelineStage], str]:
     Returns:
         stages:           [intermediate VectorAssembler, StandardScaler]
         scaled_vec_col:   name of the scaled vector column produced
-                          (passed to the final assembler in assemble.py)
+                        (passed to the final assembler in assemble.py)
     """
     pre_assembler = VectorAssembler(
         inputCols=NUMERIC_COLS,

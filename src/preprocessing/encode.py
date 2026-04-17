@@ -1,13 +1,17 @@
 """
-Sub-task 2 — Categorical Encoding.
+Categorical Encoding.
 
 Builds the ordered list of unfit Spark ML stages for:
   - Low-cardinality categoricals   -> StringIndexer + OneHotEncoder
   - High-cardinality categoricals  -> StringIndexer only (integer code)
   - The target (Accident_Severity) -> StringIndexer → column name "label"
 
+StringIndexer maps categories → integers based on frequency order.
+It is NOT scaling , It is NOT ordinal meaning , It is just a lookup table
+Mapping is learned during .fit() on training data
+
 Rationale: OneHotEncoder on a 20k-level column (make/model/LSOA) produces
-a 20k-wide sparse vector per row which blows up LR and makes GBT crawl.
+a 20k-wide sparse vector per row which blows up and crawl models.
 Integer encoding is fine for tree models and an acceptable trade-off
 for LR at this cardinality.
 """
@@ -17,30 +21,38 @@ from pyspark.ml import PipelineStage
 from pyspark.ml.feature import OneHotEncoder, StringIndexer
 
 
-# ── Low-cardinality (≤ 20 levels) → one-hot ───────────────────────────────
+# ── Low-cardinality (< 15 levels) → one-hot ───────────────────────────────
+# Chosen threshold: 15 levels. At 15 dummies per column × 12 columns we add
+# ~180 sparse-vector slots, which LR handles happily and GBT tolerates.
+# Anything ≥ 15 levels (Vehicle_Type ≈ 21, Age_Band_of_Driver borderline)
+# goes to HIGH_CARD_CATS as an integer index instead.
 LOW_CARD_CATS = [
-    "Day_of_Week",
-    "Road_Type",
-    "Weather_Conditions",
-    "Light_Conditions",
-    "Road_Surface_Conditions",
-    "Urban_or_Rural_Area",
-    "Junction_Detail",
-    "Junction_Control",
-    "Sex_of_Driver",
-    "Age_Band_of_Driver",
-    "Vehicle_Type",
-    "Pedestrian_Crossing-Human_Control",
-    "Pedestrian_Crossing-Physical_Facilities",
+    "Day_of_Week",                               # 7
+    "Road_Type",                                 # 6
+    "Weather_Conditions",                        # 9
+    "Light_Conditions",                          # 5
+    "Road_Surface_Conditions",                   # 5
+    "Urban_or_Rural_Area",                       # 3
+    "Junction_Detail",                           # 9
+    "Junction_Control",                          # 5
+    "Sex_of_Driver",                             # 4 incl. "Not known"
+    "Age_Band_of_Driver",                        # 11
+    "Pedestrian_Crossing-Human_Control",         # 4
+    "Pedestrian_Crossing-Physical_Facilities",   # 6
 ]
 
-# ── High-cardinality (> 20 levels) → integer index only ───────────────────
+# ── High-cardinality (≥ 15 levels) → integer index only ───────────────────
+# OneHot would blow LR up and slow GBT. Tree models handle integer-encoded
+# categoricals natively; LR loses a little expressiveness but saves
+# thousands of sparse dimensions.
+
 HIGH_CARD_CATS = [
-    "make",
-    "model",
-    "LSOA_of_Accident_Location",
-    "Local_Authority_(District)",
-    "Police_Force",
+    "Vehicle_Type",                # ~21 levels
+    "make",                        # ~60
+    "model",                       # ~20 000
+    "LSOA_of_Accident_Location",   # ~35 000
+    "Local_Authority_(District)",  # ~400
+    "Police_Force",                # ~50
 ]
 
 LABEL_COL = "Accident_Severity"
@@ -88,7 +100,7 @@ def build_encoding_stages() -> tuple[list[PipelineStage], list[str]]:
         )
         encoded_output_cols.append(idx_col)
 
-    # Target label — Member 3's classifier expects exactly this column name
+    
     stages.append(
         StringIndexer(
             inputCol=LABEL_COL,

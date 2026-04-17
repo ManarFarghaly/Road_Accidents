@@ -254,7 +254,7 @@ def load_accidents_and_vehicles(
         spark.read
         .option("header", True)
         .option("inferSchema", True)
-        .option("encoding", "latin1")
+        .option("encoding", "iso-8859-1")      # Spark 4 rejects "latin1"
         .csv(str(raw_dir / ACCIDENTS_CSV))
         .withColumn("Date", F.to_date("Date", "yyyy-MM-dd"))
     )
@@ -263,7 +263,7 @@ def load_accidents_and_vehicles(
         spark.read
         .option("header", True)
         .option("inferSchema", True)
-        .option("encoding", "windows-1252")
+        .option("encoding", "iso-8859-1")      # cp1252 → iso-8859-1 (compatible for this data)
         .csv(str(raw_dir / VEHICLES_CSV))
     )
 
