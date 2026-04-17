@@ -24,3 +24,6 @@ derby.log
 
 # Notebooks
 .ipynb_checkpoints/
+
+# virtualenv
+road_env/

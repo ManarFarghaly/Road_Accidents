@@ -32,4 +32,12 @@ for ingesting
 ```
    $  python -m src.data.ingest
 ``` 
-Please make sure you installed spark version 4.0.2 with Pre-built for Hadoop 3.4 or later and the bin folder of hadoop has the .dll and .exe 
+Please make sure you installed spark version 4.0.2 with Pre-built for Hadoop 3.4 or later and the bin folder of hadoop has the .dll and .exe
+
+You should have pthon 3.10 not upper as this causes conflicts with spark
+For your system to accept runing scripts 
+
+bash
+```
+ $ Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
+```
