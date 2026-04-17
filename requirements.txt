@@ -10,11 +10,12 @@ py4j==0.10.9.7
 numpy==1.26.4
 pandas==2.2.2
 pyarrow==14.0.2
+pyspark==3.5.1
 
 # =========================
 # Data acquisition
 # =========================
-kagglehub==0.2.5
+kagglehub==0.2.7
 
 # =========================
 # Weather enrichment API
@@ -40,3 +41,4 @@ tqdm==4.66.5
 python-dateutil==2.9.0.post0
 pytz==2024.1
 tzdata==2024.1
+py4j==0.10.9.7

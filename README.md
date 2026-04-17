@@ -21,8 +21,6 @@ Stages a and b are idempotent , so re-runs only redo the expensive main merge.
 
 For installing dependencies 
 
-bash
-
 ```
     $ pip install -r requirements.txt
 ```
