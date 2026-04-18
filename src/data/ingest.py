@@ -106,59 +106,51 @@ def download_bulk_weather(station_ids: list[str]) -> None:
 
 
 def build_station_weather_parquet(spark: SparkSession) -> None:
-    """
-    Ingest all downloaded .csv.gz files into a single Parquet via Spark.
-    Spark reads all files in parallel — no Python loops, no OOM.
-    """
     if STATION_WEATHER_PARQUET.exists():
         print(f"[b] {STATION_WEATHER_PARQUET} already exists — skipping")
         return
 
-    # 1. Get station list
     stations_pdf = spark.read.parquet(str(STATIONS_PARQUET)).toPandas()
     station_ids  = stations_pdf["id"].tolist()
-
-    # 2. Download raw files (skips already-done ones)
     download_bulk_weather(station_ids)
 
-    # 3. Let Spark read ALL .csv.gz files in parallel — no Python concat
     gz_files = list(WEATHER_RAW_DIR.glob("*.csv.gz"))
     if not gz_files:
         raise RuntimeError("No weather files downloaded.")
 
     print(f"[b] ingesting {len(gz_files)} station files via Spark ...")
 
-    # Meteostat daily bulk CSV columns (fixed schema — no inferSchema overhead)
-    from pyspark.sql.types import (
-        StructType, StructField, StringType, FloatType, IntegerType
-    )
-    schema = StructType([
-        StructField("date",   StringType(),  True),
-        StructField("tavg",   FloatType(),   True),
-        StructField("tmin",   FloatType(),   True),
-        StructField("tmax",   FloatType(),   True),
-        StructField("prcp",   FloatType(),   True),
-        StructField("snow",   FloatType(),   True),
-        StructField("wdir",   FloatType(),   True),
-        StructField("wspd",   FloatType(),   True),
-        StructField("wpgt",   FloatType(),   True),
-        StructField("pres",   FloatType(),   True),
-        StructField("tsun",   FloatType(),   True),
-    ])
-
-    # Spark reads all gz files in parallel, adds filename as station_id
+    # Read all columns as strings — actual columns are year/month/day + data + _source cols
     weather = (
         spark.read
-        .option("header", True)   # bulk CSVs have no header row
-        .schema(schema)
-        .csv([str(f) for f in gz_files])  # pass all paths at once
+        .option("header", True)
+        .option("inferSchema", False)   # everything as string first
+        .option("enforceSchema", False)
+        .csv([str(f) for f in gz_files])
+        # Build a proper date from the 3 separate columns
+        .withColumn(
+            "time",
+            F.to_date(
+                F.concat_ws("-", F.col("year"), F.col("month"), F.col("day")),
+                "yyyy-M-d"
+            )
+        )
+        # Extract station_id from filename
         .withColumn(
             "station_id",
-           F.regexp_extract(F.input_file_name(), r"([^/\\]+)_\d{4}\.csv\.gz$", 1)
+            F.regexp_extract(F.input_file_name(), r"([^/\\]+)_\d{4}\.csv\.gz$", 1)
         )
-        .withColumn("time", F.to_date(F.col("date"), "yyyy-MM-dd"))
-        .drop("date")
-        .filter(F.col("time").isNotNull())   # drop malformed rows
+        # Cast only the weather columns we need to float
+        .withColumn("tavg", F.col("temp").cast("float"))
+        .withColumn("tmin", F.col("tmin").cast("float"))
+        .withColumn("tmax", F.col("tmax").cast("float"))
+        .withColumn("prcp", F.col("prcp").cast("float"))
+        .withColumn("snow", F.col("snwd").cast("float"))
+        .withColumn("wspd", F.col("wspd").cast("float"))
+        .withColumn("pres", F.col("pres").cast("float"))
+        # Keep only what we need
+        .select("station_id", "time", "tavg", "tmin", "tmax", "prcp", "snow", "wspd", "pres")
+        .filter(F.col("time").isNotNull())
         .filter(F.col("time").between(WEATHER_START, WEATHER_END))
     )
 

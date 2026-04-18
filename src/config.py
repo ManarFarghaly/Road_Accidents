@@ -68,5 +68,6 @@ def get_spark(app_name: str = "road-accidents") -> SparkSession:
         .config("spark.executor.heartbeatInterval", "60s")   # was 10s default
         .config("spark.network.timeout", "600s")             # was 120s default
         .config("spark.sql.broadcastTimeout", "600")
+        .config("spark.sql.ansi.enabled", "false")
         .getOrCreate()
     )
