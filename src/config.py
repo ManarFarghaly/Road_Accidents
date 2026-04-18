@@ -17,6 +17,7 @@ RAW_DIR       = DATA_DIR / "raw"
 INTERIM_DIR   = DATA_DIR / "interim"
 PROCESSED_DIR = DATA_DIR / "processed"
 REPORTS_DIR   = PROJECT_ROOT / "reports"
+WEATHER_RAW_DIR = INTERIM_DIR / "weather_raw"
 
 # Ingestion artifacts 
 STATIONS_PARQUET        = INTERIM_DIR / "stations.parquet"
@@ -63,6 +64,9 @@ def get_spark(app_name: str = "road-accidents") -> SparkSession:
         .config("spark.python.worker.faulthandler.enabled", "true")
         .config("spark.hadoop.fs.file.impl", "org.apache.hadoop.fs.LocalFileSystem")
         .config("spark.hadoop.fs.file.impl.disable.cache", "true")
-    .config("spark.hadoop.mapreduce.fileoutputcommitter.algorithm.version", "2")
+        .config("spark.hadoop.mapreduce.fileoutputcommitter.algorithm.version", "2")
+        .config("spark.executor.heartbeatInterval", "60s")   # was 10s default
+        .config("spark.network.timeout", "600s")             # was 120s default
+        .config("spark.sql.broadcastTimeout", "600")
         .getOrCreate()
     )
