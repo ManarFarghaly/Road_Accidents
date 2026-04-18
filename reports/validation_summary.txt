@@ -1,0 +1,277 @@
+=================================================================
+  UK Road Accidents — Data Validation Report
+  2026-04-18 15:54:59
+=================================================================
+
+Loaded accidents : 2,047,256 rows x 34 columns
+Loaded vehicles  : 2,177,205 rows x 24 columns
+
+-----------------------------------------------------------------
+DIMENSION 1 — ACCURACY
+-----------------------------------------------------------------
+  [PASS] Accident_Severity — all values valid (Slight/Serious/Fatal)
+  [ISSUE] 36 rows have Speed_limit not in UK legal set {50, 20, 70, 40, 60, 30}
+  [PASS] Latitude — all within UK bounds (49–61)
+  [PASS] Longitude — all within UK bounds (-8 to 2)
+  [PASS] Number_of_Vehicles — all values >= 1
+  [PASS] Age_of_Vehicle — no negative values
+  [INFO] Age_Band_of_Driver has 12 unique categories
+  Sample values: ['26 - 35', '66 - 75', '36 - 45', '46 - 55', '21 - 25', 'Data missing or out of range', '16 - 20', '56 - 65', 'Over 75', '11 - 15']
+  [PASS] Day_of_Week — all values valid
+  [ISSUE] 76,119 vehicle records have invalid Sex_of_Driver values
+
+-----------------------------------------------------------------
+DIMENSION 2 — CONSISTENCY
+-----------------------------------------------------------------
+  [PASS] Date column — parses correctly as datetime
+  [PASS] Year column — matches year extracted from Date in all rows
+  [WARN] 2 Date/Day_of_Week mismatches found
+  [PASS] Time column — all values follow HH:MM format
+  [PASS] Year — consistent across both tables for all matched accidents
+
+-----------------------------------------------------------------
+DIMENSION 3 — COMPLETENESS
+-----------------------------------------------------------------
+
+  [ACCIDENTS]
+  Column                                           Missing       %
+  ---------------------------------------------- ---------  ------
+  Carriageway_Hazards                            2,007,807   98.1%
+  Special_Conditions_at_Site                     1,995,137   97.5%
+  2nd_Road_Class                                   844,272   41.2%
+  LSOA_of_Accident_Location                        144,953    7.1%
+  2nd_Road_Number                                   17,593    0.9%
+  Pedestrian_Crossing-Physical_Facilities            3,560    0.2%
+  Pedestrian_Crossing-Human_Control                  2,920    0.1%
+  Did_Police_Officer_Attend_Scene_of_Accident          278    0.0%
+  Latitude                                             174    0.0%  <- REQUIRED
+  Location_Easting_OSGR                                164    0.0%
+  Location_Northing_OSGR                               164    0.0%
+  Longitude                                            175    0.0%  <- REQUIRED
+  ... and 4 more columns with missing values
+  [ISSUE] [ACCIDENTS] Required column 'Latitude' has 174 null values (0.0%)
+  [ISSUE] [ACCIDENTS] Required column 'Longitude' has 175 null values (0.0%)
+  [ISSUE] [ACCIDENTS] Required column 'Speed_limit' has 37 null values (0.0%)
+  [ISSUE] [ACCIDENTS] 'Carriageway_Hazards' is 98.1% missing (>20.0% threshold)
+  [ISSUE] [ACCIDENTS] 'Special_Conditions_at_Site' is 97.5% missing (>20.0% threshold)
+  [ISSUE] [ACCIDENTS] '2nd_Road_Class' is 41.2% missing (>20.0% threshold)
+
+  [VEHICLES]
+  Column                                           Missing       %
+  ---------------------------------------------- ---------  ------
+  Hit_Object_in_Carriageway                      2,087,824   95.9%
+  Hit_Object_off_Carriageway                     1,989,741   91.4%
+  Skidding_and_Overturning                       1,898,208   87.2%
+  Driver_IMD_Decile                                734,812   33.8%
+  Age_of_Vehicle                                   358,149   16.4%
+  model                                            325,331   14.9%
+  Engine_Capacity_.CC.                             265,861   12.2%
+  Propulsion_Code                                  245,843   11.3%
+  make                                             110,845    5.1%
+  Vehicle_Location.Restricted_Lane                   1,317    0.1%
+  [ISSUE] [VEHICLES] 'Hit_Object_in_Carriageway' is 95.9% missing (>20.0% threshold)
+  [ISSUE] [VEHICLES] 'Hit_Object_off_Carriageway' is 91.4% missing (>20.0% threshold)
+  [ISSUE] [VEHICLES] 'Skidding_and_Overturning' is 87.2% missing (>20.0% threshold)
+  [ISSUE] [VEHICLES] 'Driver_IMD_Decile' is 33.8% missing (>20.0% threshold)
+
+-----------------------------------------------------------------
+DIMENSION 4 — UNIQUENESS
+-----------------------------------------------------------------
+  [PASS] Accidents — zero fully duplicate rows
+  [PASS] Accidents — all 2,047,256 Accident_Index values are unique
+  [PASS] Vehicles — zero fully duplicate rows
+  [INFO] Vehicles — 688,224 duplicate Accident_Index values (expected by design)
+  [PASS] Vehicles — (Accident_Index, Vehicle_Reference) composite key is fully unique
+
+-----------------------------------------------------------------
+DIMENSION 5 — OUTLIERS
+-----------------------------------------------------------------
+
+  IQR Method  (bounds = Q1 - 1.5*IQR  and  Q3 + 1.5*IQR):
+  Column                                       Outliers   Lower fence   Upper fence
+  ------------------------------------------ ----------  ------------  ------------
+
+  Isolation Forest  (contamination=0.05, multivariate):
+  accidents: 4,858 anomalies in 100,000 rows (4.9%)
+  vehicles: 4,999 anomalies in 100,000 rows (5.0%)
+
+  [NOTE] Outliers are FLAGGED only — removal decisions made in cleaning step.
+
+-----------------------------------------------------------------
+DIMENSION 6 — TIMELINESS
+-----------------------------------------------------------------
+  Earliest record : 2005-01-01
+  Latest record   : 2017-12-31
+  [PASS] No future dates
+  [PASS] No dates before 2005
+
+-----------------------------------------------------------------
+DIMENSION 7 — DISTRIBUTION PROFILE
+-----------------------------------------------------------------
+
+  Column                                         Min      Max     Mean   Median      Std    Skew    Kurt    Card
+  ------------------------------------------ ------- -------- -------- -------- -------- ------- -------  ------
+  accidents.Speed_limit                          0.0     70.0    38.84    30.00    14.15    1.10   -0.36       9
+
+    Histogram (accidents.Speed_limit):
+      [     0.0 –      7.0]       1  (  0.0%)  ▓
+      [     7.0 –     14.0]      19  (  0.0%)  ▓
+      [    14.0 –     21.0]  38,415  (  1.9%)  ▓
+      [    21.0 –     28.0]       0  (  0.0%)  ▓
+      [    28.0 –     35.0]  1,306,174  ( 63.8%)  ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓
+      [    35.0 –     42.0]  168,357  (  8.2%)  ▓▓▓▓
+      [    42.0 –     49.0]       0  (  0.0%)  ▓
+      [    49.0 –     56.0]  69,479  (  3.4%)  ▓
+      [    56.0 –     63.0]  317,469  ( 15.5%)  ▓▓▓▓▓▓▓
+      [    63.0 –     70.0]  147,305  (  7.2%)  ▓▓▓
+  accidents.Number_of_Casualties                 1.0     93.0     1.35     1.00     0.82    8.57  412.75      52
+
+    Histogram (accidents.Number_of_Casualties):
+      [     1.0 –     10.2]  2,046,795  (100.0%)  ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓
+      [    10.2 –     19.4]     360  (  0.0%)  ▓
+      [    19.4 –     28.6]      56  (  0.0%)  ▓
+      [    28.6 –     37.8]      17  (  0.0%)  ▓
+      [    37.8 –     47.0]      15  (  0.0%)  ▓
+      [    47.0 –     56.2]       5  (  0.0%)  ▓
+      [    56.2 –     65.4]       3  (  0.0%)  ▓
+      [    65.4 –     74.6]       2  (  0.0%)  ▓
+      [    74.6 –     83.8]       0  (  0.0%)  ▓
+      [    83.8 –     93.0]       3  (  0.0%)  ▓
+  accidents.Number_of_Vehicles                   1.0     67.0     1.83     2.00     0.71    2.16   53.08      29
+
+    Histogram (accidents.Number_of_Vehicles):
+      [     1.0 –      7.6]  2,046,478  (100.0%)  ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓
+      [     7.6 –     14.2]     749  (  0.0%)  ▓
+      [    14.2 –     20.8]      20  (  0.0%)  ▓
+      [    20.8 –     27.4]       3  (  0.0%)  ▓
+      [    27.4 –     34.0]       3  (  0.0%)  ▓
+      [    34.0 –     40.6]       2  (  0.0%)  ▓
+      [    40.6 –     47.2]       0  (  0.0%)  ▓
+      [    47.2 –     53.8]       0  (  0.0%)  ▓
+      [    53.8 –     60.4]       0  (  0.0%)  ▓
+      [    60.4 –     67.0]       1  (  0.0%)  ▓
+  accidents.Latitude                            49.9     60.8    52.56    52.24     1.45    1.03    0.83  1,319,367
+
+    Histogram (accidents.Latitude):
+      [   49.91 –     51.0]  175,171  (  8.6%)  ▓▓▓▓
+      [    51.0 –    52.08]  809,444  ( 39.5%)  ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓
+      [   52.08 –    53.17]  405,212  ( 19.8%)  ▓▓▓▓▓▓▓▓▓
+      [   53.17 –    54.25]  424,012  ( 20.7%)  ▓▓▓▓▓▓▓▓▓▓
+      [   54.25 –    55.34]  102,546  (  5.0%)  ▓▓
+      [   55.34 –    56.42]  102,828  (  5.0%)  ▓▓
+      [   56.42 –     57.5]  20,906  (  1.0%)  ▓
+      [    57.5 –    58.59]   6,073  (  0.3%)  ▓
+      [   58.59 –    59.67]     492  (  0.0%)  ▓
+      [   59.67 –    60.76]     398  (  0.0%)  ▓
+  accidents.Longitude                           -7.5      1.8    -1.41    -1.36     1.40   -0.39   -0.35  1,417,728
+
+    Histogram (accidents.Longitude):
+      [   -7.52 –    -6.59]     225  (  0.0%)  ▓
+      [   -6.59 –    -5.66]   1,071  (  0.1%)  ▓
+      [   -5.66 –    -4.73]  23,534  (  1.1%)  ▓
+      [   -4.73 –     -3.8]  108,905  (  5.3%)  ▓▓
+      [    -3.8 –    -2.88]  204,273  ( 10.0%)  ▓▓▓▓▓
+      [   -2.88 –    -1.95]  356,689  ( 17.4%)  ▓▓▓▓▓▓▓▓
+      [   -1.95 –    -1.02]  503,647  ( 24.6%)  ▓▓▓▓▓▓▓▓▓▓▓▓
+      [   -1.02 –    -0.09]  484,383  ( 23.7%)  ▓▓▓▓▓▓▓▓▓▓▓
+      [   -0.09 –     0.83]  296,607  ( 14.5%)  ▓▓▓▓▓▓▓
+      [    0.83 –     1.76]  67,747  (  3.3%)  ▓
+  vehicles.Age_of_Vehicle                        1.0    111.0     7.11     7.00     4.73    1.22    5.72      88
+
+    Histogram (vehicles.Age_of_Vehicle):
+      [     1.0 –     12.0]  1,500,285  ( 82.5%)  ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓
+      [    12.0 –     23.0]  308,862  ( 17.0%)  ▓▓▓▓▓▓▓▓
+      [    23.0 –     34.0]   8,207  (  0.5%)  ▓
+      [    34.0 –     45.0]   1,075  (  0.1%)  ▓
+      [    45.0 –     56.0]     460  (  0.0%)  ▓
+      [    56.0 –     67.0]     109  (  0.0%)  ▓
+      [    67.0 –     78.0]      36  (  0.0%)  ▓
+      [    78.0 –     89.0]      15  (  0.0%)  ▓
+      [    89.0 –    100.0]       4  (  0.0%)  ▓
+      [   100.0 –    111.0]       3  (  0.0%)  ▓
+  vehicles.Engine_Capacity_.CC.                  1.0  96000.0  2042.23  1598.00  1950.14    5.54   97.02   2,556
+
+    Histogram (vehicles.Engine_Capacity_.CC.):
+      [     1.0 –   9600.9]  1,873,104  ( 98.0%)  ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓
+      [  9600.9 –  19200.8]  38,124  (  2.0%)  ▓
+      [ 19200.8 –  28800.7]      35  (  0.0%)  ▓
+      [ 28800.7 –  38400.6]      16  (  0.0%)  ▓
+      [ 38400.6 –  48000.5]       4  (  0.0%)  ▓
+      [ 48000.5 –  57600.4]       8  (  0.0%)  ▓
+      [ 57600.4 –  67200.3]      12  (  0.0%)  ▓
+      [ 67200.3 –  76800.2]       6  (  0.0%)  ▓
+      [ 76800.2 –  86400.1]      15  (  0.0%)  ▓
+      [ 86400.1 –  96000.0]      20  (  0.0%)  ▓
+
+  KS Test vs Normal Distribution:
+  Column                                       KS stat     p-value  Interpretation
+  ------------------------------------------ ---------  ----------  ----------------------------------------
+  accidents.Speed_limit                         0.3998    0.000000  NOT normally distributed (p < 0.05) — use Spe
+  accidents.Number_of_Casualties                0.4400    0.000000  NOT normally distributed (p < 0.05) — use Spe
+  accidents.Number_of_Vehicles                  0.3028    0.000000  NOT normally distributed (p < 0.05) — use Spe
+  accidents.Latitude                            0.1305    0.000000  NOT normally distributed (p < 0.05) — use Spe
+  accidents.Longitude                           0.0882    0.000000  NOT normally distributed (p < 0.05) — use Spe
+  vehicles.Age_of_Vehicle                       0.0996    0.000000  NOT normally distributed (p < 0.05) — use Spe
+  vehicles.Engine_Capacity_.CC.                 0.3101    0.000000  NOT normally distributed (p < 0.05) — use Spe
+
+-----------------------------------------------------------------
+DIMENSION 8 — RELATIONSHIPS
+-----------------------------------------------------------------
+
+  Pearson Correlation Matrix:
+                             Speed_limit  Number_of_C  Number_of_V     Latitude    Longitude
+  Speed_limit                      1.000        0.143        0.088        0.052       -0.066
+  Number_of_Casualties             0.143        1.000        0.237        0.030       -0.038
+  Number_of_Vehicles               0.088        0.237        1.000       -0.039        0.019
+  Latitude                         0.052        0.030       -0.039        1.000       -0.434
+  Longitude                       -0.066       -0.038        0.019       -0.434        1.000
+
+  Pearson vs Spearman  (|diff| > 0.10 = non-linear relationship detected):
+  Pair                                           Pearson   Spearman    |Diff|  Note
+  -------------------------------------------- ---------  ---------  --------  -------------------------
+  Speed_limit x Number_of_Casualties               0.143      0.162     0.019  
+  Speed_limit x Number_of_Vehicles                 0.088      0.069     0.019  
+  Speed_limit x Latitude                           0.052      0.034     0.018  
+  Speed_limit x Longitude                         -0.066     -0.062     0.004  
+  Number_of_Casualties x Number_of_Vehicles        0.237      0.230     0.007  
+  Number_of_Casualties x Latitude                  0.030      0.044     0.014  
+  Number_of_Casualties x Longitude                -0.038     -0.046     0.008  
+  Number_of_Vehicles x Latitude                   -0.039     -0.029     0.010  
+  Number_of_Vehicles x Longitude                   0.019      0.018     0.001  
+  Latitude x Longitude                            -0.434     -0.411     0.023  
+
+  [PASS] No high-correlation pairs found (threshold |r| > 0.85)
+
+  [SAVED] reports\correlation_heatmap.png
+
+-----------------------------------------------------------------
+JOIN INTEGRITY  (Accident_Index key across both tables)
+-----------------------------------------------------------------
+  Unique Accident_Index in accidents table :  2,047,256
+  Unique Accident_Index in vehicles table  :  1,488,981
+  Keys matched (will survive inner join)   :  1,389,724
+  [ISSUE] 657,532 accidents (32.1%) have no vehicle record — dropped on inner join, document in cleaning step
+  [ISSUE] 99,257 vehicle records (6.7%) have no matching accident — orphaned records, dropped on inner join
+
+=================================================================
+  VALIDATION COMPLETE
+  Total issues found across all 8 dimensions: 14
+=================================================================
+
+  Issues by dimension:
+    [ACCURACY] 36 rows have Speed_limit not in UK legal set {50, 20, 70, 40, 60, 30}
+    [ACCURACY] 76,119 vehicle records have invalid Sex_of_Driver values
+    [COMPLETENESS] [ACCIDENTS] Required column 'Latitude' has 174 null values (0.0%)
+    [COMPLETENESS] [ACCIDENTS] Required column 'Longitude' has 175 null values (0.0%)
+    [COMPLETENESS] [ACCIDENTS] Required column 'Speed_limit' has 37 null values (0.0%)
+    [COMPLETENESS] [ACCIDENTS] 'Carriageway_Hazards' is 98.1% missing (>20.0% threshold)
+    [COMPLETENESS] [ACCIDENTS] 'Special_Conditions_at_Site' is 97.5% missing (>20.0% threshold)
+    [COMPLETENESS] [ACCIDENTS] '2nd_Road_Class' is 41.2% missing (>20.0% threshold)
+    [COMPLETENESS] [VEHICLES] 'Hit_Object_in_Carriageway' is 95.9% missing (>20.0% threshold)
+    [COMPLETENESS] [VEHICLES] 'Hit_Object_off_Carriageway' is 91.4% missing (>20.0% threshold)
+    [COMPLETENESS] [VEHICLES] 'Skidding_and_Overturning' is 87.2% missing (>20.0% threshold)
+    [COMPLETENESS] [VEHICLES] 'Driver_IMD_Decile' is 33.8% missing (>20.0% threshold)
+    [JOIN_INTEGRITY] 657,532 accidents (32.1%) have no vehicle record — dropped on inner join, document in cleaning step
+    [JOIN_INTEGRITY] 99,257 vehicle records (6.7%) have no matching accident — orphaned records, dropped on inner join
+
+  [SAVED] reports\validation_report.json

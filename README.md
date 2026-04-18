@@ -39,3 +39,6 @@ bash
 ```
  $ Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
 ```
+Then the next steps for running the whole preprocessing pipeline 
+python -m src.data.validate         
+python -m tests.test_preprocessing 
