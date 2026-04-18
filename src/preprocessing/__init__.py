@@ -18,7 +18,7 @@ Usage (what Member 3's code looks like):
     pipeline = Pipeline(stages=build_preprocessing_stages() + [LogisticRegression()])
     model    = pipeline.fit(train)
 """
-from pyspark.ml import PipelineStage
+# from pyspark.ml.pipeline import PipelineStage
 
 from src.preprocessing.assemble import build_assembler_stage
 from src.preprocessing.clean import clean, rebalance_undersample
@@ -26,7 +26,7 @@ from src.preprocessing.encode import build_encoding_stages
 from src.preprocessing.scale import build_scaling_stages
 
 
-def build_preprocessing_stages() -> list[PipelineStage]:
+def build_preprocessing_stages() -> list:
     """
     Returns the ordered list of unfit Spark ML stages that perform
     encoding + scaling + final assembly. Member 3 prepends these to

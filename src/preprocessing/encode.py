@@ -17,7 +17,7 @@ for LR at this cardinality.
 """
 from __future__ import annotations
 
-from pyspark.ml import PipelineStage
+# from pyspark.ml.pipeline import PipelineStage 
 from pyspark.ml.feature import OneHotEncoder, StringIndexer
 
 
@@ -58,14 +58,14 @@ HIGH_CARD_CATS = [
 LABEL_COL = "Accident_Severity"
 
 
-def build_encoding_stages() -> tuple[list[PipelineStage], list[str]]:
+def build_encoding_stages() -> tuple[list, list[str]]:
     """
     Returns:
         stages:              ordered list of unfit Spark ML stages.
         encoded_output_cols: names of the columns that should be fed
                              to the final VectorAssembler.
     """
-    stages: list[PipelineStage] = []
+    stages: list = []
     encoded_output_cols: list[str] = []
 
     # Low-card: index → one-hot

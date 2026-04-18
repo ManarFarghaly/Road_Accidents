@@ -11,14 +11,14 @@ Why an intermediate VectorAssembler:
 """
 from __future__ import annotations
 
-from pyspark.ml import PipelineStage
+# from pyspark.ml.pipeline import PipelineStage  
 from pyspark.ml.feature import StandardScaler, VectorAssembler
 
 NUMERIC_COLS = [
     # Accident numerics
     "Speed_limit",
     "Number_of_Vehicles",
-    "Number_of_Casualties",
+    
     "Latitude",
     "Longitude",
     # Vehicle numerics
@@ -36,7 +36,7 @@ NUMERIC_COLS = [
 ]
 
 
-def build_scaling_stages() -> tuple[list[PipelineStage], str]:
+def build_scaling_stages() -> tuple[list, str]:
     """
     Returns:
         stages:           [intermediate VectorAssembler, StandardScaler]

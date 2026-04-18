@@ -1,5 +1,5 @@
 """
-Sub-task 4 — Feature Assembly.
+Feature Assembly.
 
 Final VectorAssembler that concatenates:
     - the scaled-numeric vector (from scale.py)
@@ -7,7 +7,7 @@ Final VectorAssembler that concatenates:
     - integer indices for high-cardinality categoricals (from encode.py)
 
 into a single `features` column. This is the exact column name the
-modelling teammate (Member 3) reads from.
+modelling person reads from.
 """
 from __future__ import annotations
 
