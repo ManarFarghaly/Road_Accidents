@@ -23,7 +23,7 @@ NUMERIC_COLS = [
     "Longitude",
     # Vehicle numerics
     "Age_of_Vehicle",
-    "Engine_Capacity_.CC.",
+    "Engine_Capacity_CC",
     "Driver_IMD_Decile",
     # Weather numerics (from Meteostat join in ingestion stage 3e)
     "tavg",

@@ -114,7 +114,7 @@ REQUIRED_COLS = [
 VALIDITY_BOUNDS = {
     "Latitude":             (49.0, 61.0),
     "Longitude":            (-8.0, 2.0),
-    "Engine_Capacity_.CC.": (50.0, 8000.0),
+    "Engine_Capacity_CC": (50.0, 8000.0),
     "Age_of_Vehicle":       (0.0, 100.0),
     "Number_of_Vehicles":   (1.0, 100.0),
 }
@@ -126,7 +126,7 @@ VALIDITY_BOUNDS = {
 # Median is robust to the heavy right-skew (skew 2-8) flagged in validation.
 NUM_IMPUTE_COLS = [
     "Age_of_Vehicle",        # 16 %  missing — MAR (foreign / unregistered)
-    "Engine_Capacity_.CC.",  # 12 %  missing — MAR
+    "Engine_Capacity_CC",  # 12 %  missing — MAR
     "Driver_IMD_Decile",     # 34 %  missing — MAR (foreign postcodes) depends on driver location
     # Weather features added in ingestion stage e. Nulls occur for
     # (station_id, date) pairs where Meteostat had no observation — MCAR
@@ -264,6 +264,25 @@ def clean(df: DataFrame) -> DataFrame:
     ]
     if to_drop:
         df = df.drop(*to_drop)
+    # ── Rename columns with special characters in their names ────────────
+    # Dots in column names cause AnalysisException throughout Spark ML.
+    # Rename once here so all downstream stages see clean names.
+    RENAME_COLS = {
+        "Engine_Capacity_.CC.": "Engine_Capacity_CC",
+    }
+    for old, new in RENAME_COLS.items():
+        if old in df.columns:
+            df = df.withColumnRenamed(old, new)
+    # Cast known numeric columns to double early — avoids type errors downstream
+    NUMERIC_CAST_COLS = [
+        "Speed_limit", "Number_of_Vehicles", "Latitude", "Longitude",
+        "Age_of_Vehicle", "Engine_Capacity_CC", "Driver_IMD_Decile",
+        "tavg", "tmin", "tmax", "prcp", "snow", "wspd", "pres",
+    ]
+    for c in NUMERIC_CAST_COLS:
+        if c in df.columns:
+            safe_ref = f"`{c}`" if any(ch in c for ch in [".", "(", ")"]) else c
+            df = df.withColumn(c, F.col(safe_ref).cast("double"))
 
     # b ─ null out sentinel strings across every string column
     str_cols = [
@@ -271,17 +290,19 @@ def clean(df: DataFrame) -> DataFrame:
         if f.dataType.simpleString() == "string"
     ]
     for c in str_cols:
+        safe = f"`{c}`"
         df = df.withColumn(
             c,
-            F.when(F.col(c).isin(SENTINEL_STRINGS), None).otherwise(F.col(c)),
+            F.when(F.col(safe).isin(SENTINEL_STRINGS), None).otherwise(F.col(safe)),
         )
 
     # c ─ numeric -1 sentinel → NULL (DfT "unknown" code for numerics)
     for c in NUM_IMPUTE_COLS:
         if c in df.columns:
+            safe = f"`{c}`"
             df = df.withColumn(
                 c,
-                F.when(F.col(c) < 0, None).otherwise(F.col(c)),
+                F.when(F.col(safe) < 0, None).otherwise(F.col(safe)),
             )
 
     # d ─ snap 36 invalid Speed_limit values to nearest UK legal limit
@@ -293,10 +314,11 @@ def clean(df: DataFrame) -> DataFrame:
     # or 9999 gets nulled first, then the row is dropped if unrecoverable.)
     for col, (lo, hi) in VALIDITY_BOUNDS.items():
         if col in df.columns:
+            safe = f"`{col}`"
             df = df.withColumn(
                 col,
-                F.when((F.col(col) < lo) | (F.col(col) > hi), None)
-                 .otherwise(F.col(col)),
+                F.when((F.col(safe) < lo) | (F.col(safe) > hi), None)
+                .otherwise(F.col(safe)),
             )
 
     # e' ─ drop rows missing any REQUIRED column (target + geo)
@@ -304,15 +326,32 @@ def clean(df: DataFrame) -> DataFrame:
         if c in df.columns:
             df = df.filter(F.col(c).isNotNull())
 
+
     # g ─ numeric median imputation (MAR, robust to skew)
     num_present = [c for c in NUM_IMPUTE_COLS if c in df.columns]
     if num_present:
+        # Rename columns with special chars (dots/parens) to safe names
+        # Imputer cannot handle column names containing dots
+        rename_map = {}   # original → safe
+        for c in num_present:
+            if any(ch in c for ch in [".", "(", ")", " "]):
+                safe = c.replace(".", "_").replace("(", "_").replace(")", "_").replace(" ", "_")
+                rename_map[c] = safe
+                df = df.withColumnRenamed(c, safe)
+
+        # Use safe names for imputer
+        safe_num_present = [rename_map.get(c, c) for c in num_present]
+
         imputer = Imputer(
-            inputCols=num_present,
-            outputCols=num_present,     # overwrite in place
+            inputCols=safe_num_present,
+            outputCols=safe_num_present,
             strategy="median",
         )
         df = imputer.fit(df).transform(df)
+
+        # Rename back to original names
+        for original, safe_name in rename_map.items():
+            df = df.withColumnRenamed(safe_name, original)
 
     # h ─ group-wise mode fill (model ← mode per make)
     for target, group in GROUP_MODE_IMPUTE:
