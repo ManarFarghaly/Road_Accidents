@@ -156,7 +156,7 @@ def build_station_weather_parquet(spark: SparkSession) -> None:
             "station_id",
            F.regexp_extract(F.input_file_name(), r"([^/\\]+)_\d{4}\.csv\.gz$", 1)
         )
-        .withColumn("time", F.expr("try_to_date(date, 'yyyy-MM-dd')"))
+        .withColumn("time", F.to_date(F.col("date"), "yyyy-MM-dd"))
         .drop("date")
         .filter(F.col("time").isNotNull())   # drop malformed rows
         .filter(F.col("time").between(WEATHER_START, WEATHER_END))
@@ -421,8 +421,8 @@ def attach_nearest_station(spark: SparkSession, accidents: DataFrame) -> DataFra
     # Vectorized haversine: (N_accidents, N_stations) matrix
     s_lat = np.radians(stations_pd["latitude"].values)
     s_lon = np.radians(stations_pd["longitude"].values)
-    a_lat = np.radians(acc_pd["Latitude"].fillna(0).values)[:, None]
-    a_lon = np.radians(acc_pd["Longitude"].fillna(0).values)[:, None]
+    a_lat = np.radians(pd.to_numeric(acc_pd["Latitude"], errors="coerce").fillna(0).values)[:, None]
+    a_lon = np.radians(pd.to_numeric(acc_pd["Longitude"], errors="coerce").fillna(0).values)[:, None]
 
     dlat = s_lat - a_lat
     dlon = s_lon - a_lon
@@ -432,7 +432,8 @@ def attach_nearest_station(spark: SparkSession, accidents: DataFrame) -> DataFra
 
     acc_pd["station_id"] = stations_pd["id"].values[idx]
     # Null out rows where lat/lon was missing
-    missing = acc_pd["Latitude"].isna() | acc_pd["Longitude"].isna()
+    missing = pd.to_numeric(acc_pd["Latitude"], errors="coerce").isna() | \
+          pd.to_numeric(acc_pd["Longitude"], errors="coerce").isna()
     acc_pd.loc[missing, "station_id"] = None
 
     # Join the station_id column back to the full accidents DataFrame
