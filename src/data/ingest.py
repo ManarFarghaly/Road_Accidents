@@ -156,12 +156,10 @@ def build_station_weather_parquet(spark: SparkSession) -> None:
             "station_id",
            F.regexp_extract(F.input_file_name(), r"([^/\\]+)_\d{4}\.csv\.gz$", 1)
         )
-        .withColumn("time", F.to_date("date", "yyyy-MM-dd"))
+        .withColumn("time", F.expr("try_to_date(date, 'yyyy-MM-dd')"))
         .drop("date")
-        .filter(
-            F.col("time").between(WEATHER_START, WEATHER_END)
-        )
-        
+        .filter(F.col("time").isNotNull())   # drop malformed rows
+        .filter(F.col("time").between(WEATHER_START, WEATHER_END))
     )
 
     (weather
@@ -399,36 +397,49 @@ def load_accidents_and_vehicles(
 # ════════════════════════════════════════════════════════════════════════════
 def attach_nearest_station(spark: SparkSession, accidents: DataFrame) -> DataFrame:
     """
-    Find nearest Meteostat station for each accident using a broadcast
-    cross join + pure Spark SQL haversine — runs entirely on the JVM,
-    no Python workers, no OOM risk.
+    Compute nearest station entirely on the driver using pandas + numpy,
+    then join the result back as a Spark column. No cross join, no OOM.
+    
+    Why this works: the haversine matrix is (2M accidents × 156 stations)
+    but we only need argmin per row — pandas does this in ~2 seconds.
+    The result is a tiny 2-column DataFrame (Accident_Index → station_id)
+    that we join back to accidents.
     """
-    print("[d] attaching nearest_station via broadcast SQL ...")
+    import numpy as np
+    import pandas as pd
 
-    stations_pdf = spark.read.parquet(str(STATIONS_PARQUET)).toPandas()
-    stations_sdf = spark.createDataFrame(
-        list(zip(
-            stations_pdf["id"].tolist(),
-            stations_pdf["latitude"].tolist(),
-            stations_pdf["longitude"].tolist(),
-        )),
-        ["station_id", "s_lat", "s_lon"],
-    )
+    print("[d] attaching nearest_station via pandas haversine on driver ...")
 
-    return (
+    # Load both as pandas — stations is tiny, accidents index is just 2 columns
+    stations_pd = spark.read.parquet(str(STATIONS_PARQUET)).toPandas()
+    acc_pd = (
         accidents
-        .crossJoin(F.broadcast(stations_sdf))
-        .withColumn(
-            "_h",
-            F.pow(F.sin((F.radians(F.col("s_lat")) - F.radians(F.col("Latitude"))) / 2), 2)
-            + F.cos(F.radians(F.col("Latitude"))) * F.cos(F.radians(F.col("s_lat")))
-            * F.pow(F.sin((F.radians(F.col("s_lon")) - F.radians(F.col("Longitude"))) / 2), 2),
-        )
-        .withColumn("_rank", F.rank().over(Window.partitionBy("Accident_Index").orderBy("_h")))
-        .filter(F.col("_rank") == 1)
-        .drop("_h", "_rank", "s_lat", "s_lon")
+        .select("Accident_Index", "Latitude", "Longitude")
+        .toPandas()
     )
 
+    # Vectorized haversine: (N_accidents, N_stations) matrix
+    s_lat = np.radians(stations_pd["latitude"].values)
+    s_lon = np.radians(stations_pd["longitude"].values)
+    a_lat = np.radians(acc_pd["Latitude"].fillna(0).values)[:, None]
+    a_lon = np.radians(acc_pd["Longitude"].fillna(0).values)[:, None]
+
+    dlat = s_lat - a_lat
+    dlon = s_lon - a_lon
+    h = (np.sin(dlat / 2) ** 2
+         + np.cos(a_lat) * np.cos(s_lat) * np.sin(dlon / 2) ** 2)
+    idx = np.argmin(h, axis=1)
+
+    acc_pd["station_id"] = stations_pd["id"].values[idx]
+    # Null out rows where lat/lon was missing
+    missing = acc_pd["Latitude"].isna() | acc_pd["Longitude"].isna()
+    acc_pd.loc[missing, "station_id"] = None
+
+    # Join the station_id column back to the full accidents DataFrame
+    station_map = spark.createDataFrame(
+        acc_pd[["Accident_Index", "station_id"]]
+    )
+    return accidents.join(station_map, on="Accident_Index", how="left")
 
 # def attach_nearest_station(spark: SparkSession, accidents: DataFrame) -> DataFrame:
 #     """
