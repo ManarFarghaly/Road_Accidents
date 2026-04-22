@@ -25,9 +25,6 @@ import socket
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-os.environ["HADOOP_HOME"] = r"C:\hadoop"
-os.environ["hadoop.home.dir"] = r"C:\hadoop"
-os.environ["PATH"] += os.pathsep + r"C:\hadoop\bin"
 from datetime import datetime
 from pathlib import Path
 

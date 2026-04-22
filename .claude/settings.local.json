@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(wc -l src/**/*.py main.py)",
+      "Bash(python -c \"import sys; print\\(sys.executable\\)\")",
+      "Bash(road_env/Scripts/python.exe --version)",
+      "Bash(pip show:*)"
+    ]
+  }
+}
