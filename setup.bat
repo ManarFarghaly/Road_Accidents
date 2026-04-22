@@ -6,28 +6,26 @@ REM  Run this once after cloning the repo:
 REM      setup.bat
 REM
 REM  What it does:
-REM    1. Checks for Python 3.11 / 3.12 (required; 3.14 is NOT supported)
-REM    2. Creates a virtual environment in road_env\
-REM    3. Installs all Python dependencies from requirements.txt
-REM    4. Downloads winutils.exe + hadoop.dll into winutils\bin\
-REM    5. Prints next-step instructions
+REM    1. Checks for Python 3.11+
+REM    2. Installs all Python dependencies into the system Python
+REM    3. Downloads winutils.exe + hadoop.dll into winutils\bin\
 REM =============================================================================
 
 setlocal EnableDelayedExpansion
 
 echo.
 echo ============================================================
-echo   Road Accidents Project — Windows Setup
+echo   Road Accidents Project -- Windows Setup
 echo ============================================================
 echo.
 
 REM --------------------------------------------------------------------------
-REM 1. Check Python version
+REM 1. Check Python
 REM --------------------------------------------------------------------------
 python --version >nul 2>&1
 if errorlevel 1 (
     echo [ERROR] Python not found on PATH.
-    echo         Install Python 3.11 or 3.12 from https://python.org
+    echo         Install Python 3.11 or later from https://python.org
     exit /b 1
 )
 
@@ -38,7 +36,7 @@ for /f "tokens=1,2 delims=." %%a in ("%PY_VER%") do (
 )
 
 if "%PY_MAJOR%" neq "3" (
-    echo [ERROR] Python 3 is required. Found: %PY_VER%
+    echo [ERROR] Python 3 required. Found: %PY_VER%
     exit /b 1
 )
 if %PY_MINOR% LSS 11 (
@@ -48,61 +46,37 @@ if %PY_MINOR% LSS 11 (
 echo [OK] Python %PY_VER%
 
 REM --------------------------------------------------------------------------
-REM 2. Create virtual environment
-REM --------------------------------------------------------------------------
-if exist road_env\Scripts\activate.bat (
-    echo [OK] Virtual environment already exists — skipping creation.
-) else (
-    echo [..] Creating virtual environment in road_env\ ...
-    python -m venv road_env
-    if errorlevel 1 (
-        echo [ERROR] Failed to create virtual environment.
-        exit /b 1
-    )
-    echo [OK] Virtual environment created.
-)
-
-REM --------------------------------------------------------------------------
-REM 3. Activate venv and install dependencies
+REM 2. Install dependencies
 REM --------------------------------------------------------------------------
 echo [..] Installing dependencies (this may take a few minutes) ...
-call road_env\Scripts\activate.bat
 python -m pip install --upgrade pip --quiet
-pip install -r requirements.txt --quiet
+pip install -r requirements.txt
 if errorlevel 1 (
-    echo [ERROR] pip install failed. Check requirements.txt and your internet connection.
+    echo [ERROR] pip install failed. Check your internet connection.
     exit /b 1
 )
 echo [OK] Dependencies installed.
 
 REM --------------------------------------------------------------------------
-REM 4. Download winutils
+REM 3. Download winutils
 REM --------------------------------------------------------------------------
 echo [..] Downloading winutils.exe and hadoop.dll ...
 python scripts\get_winutils.py
 if errorlevel 1 (
-    echo [ERROR] winutils download failed. Check your internet connection.
-    echo         You can retry later with:  python scripts\get_winutils.py
+    echo [ERROR] winutils download failed. Retry with: python scripts\get_winutils.py
+    exit /b 1
 )
 
 REM --------------------------------------------------------------------------
-REM 5. Done
+REM 4. Done
 REM --------------------------------------------------------------------------
 echo.
 echo ============================================================
 echo   Setup complete!
 echo ============================================================
 echo.
-echo   Activate the virtual environment:
-echo       road_env\Scripts\activate
-echo.
-echo   Then run the pipeline stages:
-echo       python -m src.data.ingest
-echo       python -m src.data.validate
+echo   Run the pipeline stages:
 echo       python -m src.preprocessing.run
-echo.
-echo   Or run tests:
-echo       python -m tests.test_preprocessing
 echo.
 
 endlocal
