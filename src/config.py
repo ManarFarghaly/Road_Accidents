@@ -4,13 +4,69 @@ Shared configuration for the UK Road Accidents project.
 All modules import `get_spark()` from here so every script uses
 identical Spark settings (pseudo-distributed local[*] mode).
 """
+import os
+import platform
+import sys
 from pathlib import Path
 
 from pyspark.sql import SparkSession
 
 
-# Project paths 
+# Project paths
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+
+def _configure_hadoop() -> None:
+    """
+    Auto-detect and configure HADOOP_HOME so PySpark can find winutils on Windows.
+
+    Resolution order (first match wins):
+      1. HADOOP_HOME already set in the environment → nothing to do.
+      2. Bundled winutils inside the project: <project_root>/winutils/
+         (run  python scripts/get_winutils.py  to populate it).
+      3. The legacy default location C:\\hadoop (keeps existing setups working).
+      4. Not found → print a clear, actionable error and exit.
+
+    On Linux / macOS winutils is not required, so this function returns immediately.
+    """
+    if platform.system() != "Windows":
+        return
+
+    if os.environ.get("HADOOP_HOME"):
+        # Already configured (e.g. set in the system environment or a .env file)
+        return
+
+    # Bundled copy inside the repo — works on any teammate's machine after
+    # running `python scripts/get_winutils.py`
+    bundled = PROJECT_ROOT / "winutils"
+    if (bundled / "bin" / "winutils.exe").exists():
+        hadoop_home = str(bundled)
+        os.environ["HADOOP_HOME"] = hadoop_home
+        os.environ["hadoop.home.dir"] = hadoop_home
+        os.environ["PATH"] = str(bundled / "bin") + os.pathsep + os.environ.get("PATH", "")
+        return
+
+    # Legacy / manual install at the documented default location
+    legacy = Path(r"C:\hadoop")
+    if legacy.exists():
+        os.environ["HADOOP_HOME"] = str(legacy)
+        os.environ["hadoop.home.dir"] = str(legacy)
+        os.environ["PATH"] += os.pathsep + str(legacy / "bin")
+        return
+
+    # Nothing found — give a clear, actionable error instead of a cryptic Spark crash
+    print(
+        "\n[ERROR] winutils not found. PySpark on Windows needs winutils.exe to run.\n"
+        "Fix: run the setup script once, then re-run your pipeline:\n\n"
+        "    python scripts/get_winutils.py\n\n"
+        "This downloads winutils.exe into the project's winutils/ folder.\n"
+        "Alternatively set HADOOP_HOME to an existing Hadoop installation.\n",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+
+
+_configure_hadoop()
 
 DATA_DIR      = PROJECT_ROOT / "data"
 RAW_DIR       = DATA_DIR / "raw"
