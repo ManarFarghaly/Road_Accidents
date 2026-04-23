@@ -22,11 +22,16 @@ from __future__ import annotations
 import json
 import os
 import socket
+import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from datetime import datetime
 from pathlib import Path
+
+# Set Python executable path for Spark workers BEFORE importing pyspark
+os.environ["PYSPARK_PYTHON"] = sys.executable
+os.environ["PYSPARK_DRIVER_PYTHON"] = sys.executable
 
 import numpy as np
 import pandas as pd
@@ -115,47 +120,63 @@ def build_station_weather_parquet(spark: SparkSession) -> None:
     if not gz_files:
         raise RuntimeError("No weather files downloaded.")
 
-    print(f"[b] ingesting {len(gz_files)} station files via Spark ...")
+    # Meteostat bulk files have INCONSISTENT schemas across stations and years:
+    #   some have: year,month,day,temp,tmin,tmax,prcp,snwd,wspd,pres
+    #   some have: year,month,day,temp,tmin,tmax,prcp,wspd,wpgt,tsun   (no snwd/pres)
+    #   some have: year,month,day,temp,tmin,tmax,prcp,wspd,pres        (no snwd)
+    # Spark's CSV reader fails with CSVHeaderChecker when files have different headers.
+    # Fix: read each file in pandas to normalize columns, then build one Spark DataFrame.
+    print(f"[b] reading {len(gz_files)} station files via pandas (schema normalization) ...")
 
-    # Read all columns as strings — actual columns are year/month/day + data + _source cols
-    weather = (
-        spark.read
-        .option("header", True)
-        .option("inferSchema", False)   # everything as string first
-        .option("enforceSchema", False)
-        .csv([str(f) for f in gz_files])
-        # Build a proper date from the 3 separate columns
-        .withColumn(
-            "time",
-            F.to_date(
-                F.concat_ws("-", F.col("year"), F.col("month"), F.col("day")),
-                "yyyy-M-d"
+    frames = []
+    errors = 0
+    for f in gz_files:
+        # Extract station_id from filename pattern: {station_id}_{year}.csv.gz
+        sid = f.stem.rsplit("_", 1)[0]
+        try:
+            df = pd.read_csv(f, compression="gzip")
+            df.columns = df.columns.str.strip()
+            # Normalize to fixed column set — missing columns become NaN
+            df["station_id"] = sid
+            df["tavg"] = pd.to_numeric(df.get("temp"), errors="coerce").astype("float32")
+            df["tmin"] = pd.to_numeric(df.get("tmin"), errors="coerce").astype("float32")
+            df["tmax"] = pd.to_numeric(df.get("tmax"), errors="coerce").astype("float32")
+            df["prcp"] = pd.to_numeric(df.get("prcp"), errors="coerce").astype("float32")
+            df["snow"] = pd.to_numeric(df.get("snwd"), errors="coerce").astype("float32")
+            df["wspd"] = pd.to_numeric(df.get("wspd"), errors="coerce").astype("float32")
+            df["pres"] = pd.to_numeric(df.get("pres"), errors="coerce").astype("float32")
+            df["time"] = pd.to_datetime(
+                df["year"].astype(str) + "-" +
+                df["month"].astype(str).str.zfill(2) + "-" +
+                df["day"].astype(str).str.zfill(2),
+                errors="coerce"
             )
-        )
-        # Extract station_id from filename
-        .withColumn(
-            "station_id",
-            F.regexp_extract(F.input_file_name(), r"([^/\\]+)_\d{4}\.csv\.gz$", 1)
-        )
-        # Cast only the weather columns we need to float
-        .withColumn("tavg", F.col("temp").cast("float"))
-        .withColumn("tmin", F.col("tmin").cast("float"))
-        .withColumn("tmax", F.col("tmax").cast("float"))
-        .withColumn("prcp", F.col("prcp").cast("float"))
-        .withColumn("snow", F.col("snwd").cast("float"))
-        .withColumn("wspd", F.col("wspd").cast("float"))
-        .withColumn("pres", F.col("pres").cast("float"))
-        # Keep only what we need
-        .select("station_id", "time", "tavg", "tmin", "tmax", "prcp", "snow", "wspd", "pres")
-        .filter(F.col("time").isNotNull())
-        .filter(F.col("time").between(WEATHER_START, WEATHER_END))
-    )
+            frames.append(
+                df[["station_id", "time", "tavg", "tmin", "tmax", "prcp", "snow", "wspd", "pres"]]
+                .dropna(subset=["time"])
+            )
+        except Exception:
+            errors += 1
 
-    (weather
-        .write
-        .mode("overwrite")
-        .parquet(str(STATION_WEATHER_PARQUET)))
+    print(f"[b] parsed {len(frames)} files ({errors} skipped with errors)")
+    if not frames:
+        raise RuntimeError("No weather data could be parsed from any downloaded file.")
 
+    all_weather = pd.concat(frames, ignore_index=True)
+    # Filter to accident date range
+    all_weather = all_weather[
+        (all_weather["time"] >= pd.Timestamp(WEATHER_START)) &
+        (all_weather["time"] <= pd.Timestamp(WEATHER_END))
+    ]
+    # Convert datetime to date for Spark compatibility
+    all_weather["time"] = all_weather["time"].dt.date
+
+    print(f"[b] total weather rows: {len(all_weather):,} — creating Spark DataFrame ...")
+    # Write directly with pandas/pyarrow — avoids spark.createDataFrame() which crashes
+    # on Windows/Python 3.13 due to Python worker socket errors for large DataFrames.
+    # Both pd.read_parquet() and spark.read.parquet() handle a single-file parquet fine.
+    print(f"[b] total weather rows: {len(all_weather):,} — writing parquet with pandas ...")
+    all_weather.to_parquet(str(STATION_WEATHER_PARQUET), index=False, engine="pyarrow")
     print(f"[b] weather parquet written → {STATION_WEATHER_PARQUET}")
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -382,6 +403,98 @@ def load_accidents_and_vehicles(
 
 
 # ════════════════════════════════════════════════════════════════════════════
+# Pure pandas versions to avoid Spark distributed shuffle crashes
+# ════════════════════════════════════════════════════════════════════════════
+def attach_nearest_station_pandas(acc_pd):
+    """Attach nearest station ID to accidents using pure pandas (on driver)."""
+    import numpy as np
+    import pandas as pd
+    
+    # Read stations once
+    stations_pd = pd.read_parquet(str(STATIONS_PARQUET))
+    
+    print("[d] computing nearest stations via haversine...")
+    # Vectorized haversine with batching
+    s_lat = np.radians(stations_pd["latitude"].values)
+    s_lon = np.radians(stations_pd["longitude"].values)
+    a_lat_vals = np.radians(pd.to_numeric(acc_pd["Latitude"], errors="coerce").fillna(0).values)
+    a_lon_vals = np.radians(pd.to_numeric(acc_pd["Longitude"], errors="coerce").fillna(0).values)
+
+    batch_size = 50000
+    idx_list = []
+    
+    for i, batch_start in enumerate(range(0, len(a_lat_vals), batch_size)):
+        if i % 20 == 0:
+            print(f"    batch {i+1}/{(len(a_lat_vals)-1)//batch_size + 1}")
+        batch_end = min(batch_start + batch_size, len(a_lat_vals))
+        a_lat = a_lat_vals[batch_start:batch_end][:, None]
+        a_lon = a_lon_vals[batch_start:batch_end][:, None]
+
+        dlat = s_lat - a_lat
+        dlon = s_lon - a_lon
+        h = (np.sin(dlat / 2) ** 2
+             + np.cos(a_lat) * np.cos(s_lat) * np.sin(dlon / 2) ** 2)
+        idx_list.extend(np.argmin(h, axis=1))
+
+    acc_pd = acc_pd.copy()
+    acc_pd["station_id"] = stations_pd["id"].values[idx_list]
+    
+    # Null out rows where lat/lon was missing
+    missing = pd.to_numeric(acc_pd["Latitude"], errors="coerce").isna() | \
+              pd.to_numeric(acc_pd["Longitude"], errors="coerce").isna()
+    acc_pd.loc[missing, "station_id"] = None
+    
+    return acc_pd
+
+
+def join_weather_pandas(spark, acc_pd):
+    """Join weather data using pure pandas."""
+    import pandas as pd
+    
+    if not STATION_WEATHER_PARQUET.exists():
+        print("[e] no weather parquet — attaching NULL weather columns")
+        for col in ["tavg", "tmin", "tmax", "prcp", "snow", "wspd", "pres"]:
+            acc_pd[col] = None
+        return acc_pd
+
+    print("[e] joining weather on (station_id, Date) via pandas...")
+    weather_pd = pd.read_parquet(str(STATION_WEATHER_PARQUET))
+    
+    # Merge on station_id and date
+    acc_weather_pd = acc_pd.merge(
+        weather_pd,
+        left_on=["station_id", "Date"],
+        right_on=["station_id", "time"],
+        how="left"
+    ).drop(columns=["time"], errors="ignore")
+    
+    return acc_weather_pd
+
+
+def join_vehicles_and_write_pandas(spark, acc_weather_pd, vehicles_pd):
+    """Join vehicles and write using pandas first, then Spark for parquet."""
+    import pandas as pd
+    
+    print("[f] merging accidents+weather+vehicles via pandas...")
+    
+    # Merge
+    merged_pd = acc_weather_pd.merge(vehicles_pd, on="Accident_Index", how="left")
+    
+    # Handle duplicate Year columns
+    if "Year_y" in merged_pd.columns:
+        merged_pd = merged_pd.drop(columns=["Year_y"])
+    if "Year_x" in merged_pd.columns:
+        merged_pd = merged_pd.rename(columns={"Year_x": "Year"})
+    
+    print(f"[f] writing {MERGED_PARQUET} (partitionBy=Year)")
+    merged_spark = spark.createDataFrame(merged_pd)
+    (merged_spark
+         .write.mode("overwrite")
+         .partitionBy("Year")
+         .parquet(str(MERGED_PARQUET)))
+
+
+# ════════════════════════════════════════════════════════════════════════════
 # Stage d — Nearest-station lookup (broadcast + vectorized pandas_udf)
 # ════════════════════════════════════════════════════════════════════════════
 def attach_nearest_station(spark: SparkSession, accidents: DataFrame) -> DataFrame:
@@ -397,39 +510,38 @@ def attach_nearest_station(spark: SparkSession, accidents: DataFrame) -> DataFra
     import numpy as np
     import pandas as pd
 
-    print("[d] attaching nearest_station via pandas haversine on driver ...")
+    print("[d] attaching nearest_station via pandas_udf (distributed) ...")
 
-    # Load both as pandas — stations is tiny, accidents index is just 2 columns
     stations_pd = spark.read.parquet(str(STATIONS_PARQUET)).toPandas()
-    acc_pd = (
-        accidents
-        .select("Accident_Index", "Latitude", "Longitude")
-        .toPandas()
-    )
 
-    # Vectorized haversine: (N_accidents, N_stations) matrix
-    s_lat = np.radians(stations_pd["latitude"].values)
-    s_lon = np.radians(stations_pd["longitude"].values)
-    a_lat = np.radians(pd.to_numeric(acc_pd["Latitude"], errors="coerce").fillna(0).values)[:, None]
-    a_lon = np.radians(pd.to_numeric(acc_pd["Longitude"], errors="coerce").fillna(0).values)[:, None]
+    # Broadcast tiny stations arrays to every executor once.
+    stations_bc = spark.sparkContext.broadcast({
+        "id": stations_pd["id"].to_numpy(),
+        "lat": np.radians(stations_pd["latitude"].to_numpy(dtype=float)),
+        "lon": np.radians(stations_pd["longitude"].to_numpy(dtype=float)),
+    })
 
-    dlat = s_lat - a_lat
-    dlon = s_lon - a_lon
-    h = (np.sin(dlat / 2) ** 2
-         + np.cos(a_lat) * np.cos(s_lat) * np.sin(dlon / 2) ** 2)
-    idx = np.argmin(h, axis=1)
+    @pandas_udf("string")
+    def nearest_station(lat: pd.Series, lon: pd.Series) -> pd.Series:
+        s = stations_bc.value
+        s_lat = s["lat"][None, :]
+        s_lon = s["lon"][None, :]
+        ids = s["id"]
 
-    acc_pd["station_id"] = stations_pd["id"].values[idx]
-    # Null out rows where lat/lon was missing
-    missing = pd.to_numeric(acc_pd["Latitude"], errors="coerce").isna() | \
-          pd.to_numeric(acc_pd["Longitude"], errors="coerce").isna()
-    acc_pd.loc[missing, "station_id"] = None
+        valid = lat.notna() & lon.notna()
+        a_lat = np.radians(lat.fillna(0).to_numpy(dtype=float))[:, None]
+        a_lon = np.radians(lon.fillna(0).to_numpy(dtype=float))[:, None]
 
-    # Join the station_id column back to the full accidents DataFrame
-    station_map = spark.createDataFrame(
-        acc_pd[["Accident_Index", "station_id"]]
-    )
-    return accidents.join(station_map, on="Accident_Index", how="left")
+        dlat = s_lat - a_lat
+        dlon = s_lon - a_lon
+        h = np.sin(dlat / 2) ** 2 + np.cos(a_lat) * np.cos(s_lat) * np.sin(dlon / 2) ** 2
+        idx = np.argmin(h, axis=1)
+
+        out = pd.Series(ids[idx], index=lat.index)
+        out[~valid] = None
+        return out
+
+    return accidents.withColumn("station_id", nearest_station(F.col("Latitude"), F.col("Longitude")))
 
 # def attach_nearest_station(spark: SparkSession, accidents: DataFrame) -> DataFrame:
 #     """
@@ -499,11 +611,9 @@ def attach_nearest_station(spark: SparkSession, accidents: DataFrame) -> DataFra
 
 
 # ════════════════════════════════════════════════════════════════════════════
-# Stage e — Weather join (plain two-column distributed join)
+# Stage e — Weather join (pure pandas to avoid Spark shuffle)
 # ════════════════════════════════════════════════════════════════════════════
 def join_weather(spark: SparkSession, accidents: DataFrame) -> DataFrame:
-    # If weather fetch was skipped (Meteostat unreliable), attach NULL columns
-    # so downstream code keeps the same schema and Imputer fills them later.
     if not STATION_WEATHER_PARQUET.exists():
         print("[e] no weather parquet — attaching NULL weather columns (median-imputed later)")
         for col, dtype in [
@@ -514,44 +624,64 @@ def join_weather(spark: SparkSession, accidents: DataFrame) -> DataFrame:
             accidents = accidents.withColumn(col, F.lit(None).cast(dtype))
         return accidents
 
-    weather = spark.read.parquet(str(STATION_WEATHER_PARQUET))
-    print("[e] joining weather on (station_id, Date)")
-    # Left join: 
-    # keep all accidents
-    # attach weather if exists
-    return (
-        accidents.alias("a")
-        .join(
-            weather.alias("w"),
-            (F.col("a.station_id") == F.col("w.station_id"))
-            & (F.col("a.Date") == F.col("w.time")),
-            how="left",
+    # Try to read weather, but if it's corrupted/empty, attach NULLs instead
+    try:
+        weather = spark.read.parquet(str(STATION_WEATHER_PARQUET))
+        print("[e] joining weather on (station_id, Date)")
+        return (
+            accidents.alias("a")
+            .join(
+                weather.alias("w"),
+                (F.col("a.station_id") == F.col("w.station_id"))
+                & (F.col("a.Date") == F.col("w.time")),
+                how="left",
+            )
+            .drop(F.col("w.station_id"))
+            .drop(F.col("w.time"))
         )
-        .drop(F.col("w.station_id"))
-        .drop(F.col("w.time"))
-    )
+    except Exception as e:
+        print(f"[e] weather parquet corrupted ({e!r}) — attaching NULL weather columns")
+        for col, dtype in [
+            ("tavg", "double"), ("tmin", "double"), ("tmax", "double"),
+            ("prcp", "double"), ("snow", "double"), ("wspd", "double"),
+            ("pres", "double"),
+        ]:
+            accidents = accidents.withColumn(col, F.lit(None).cast(dtype))
+        return accidents
 
 
 # ════════════════════════════════════════════════════════════════════════════
 # Stage f — Join vehicles, write partitioned Parquet
 # ════════════════════════════════════════════════════════════════════════════
 def join_vehicles_and_write(acc_weather: DataFrame, vehicles: DataFrame) -> None:
-    merged = (acc_weather.join(vehicles, on="Accident_Index", how="left").drop(vehicles["Year"]))
+    print("[f] joining accidents+weather+vehicles fully in Spark ...")
 
-    n_files_per_year = os.cpu_count() or 8
-    print(f"[f] writing {MERGED_PARQUET} "
-          f"(repartition={n_files_per_year}, partitionBy=Year)")
+    vehicles_for_join = vehicles.drop("Year") if "Year" in vehicles.columns else vehicles
+    merged = acc_weather.join(vehicles_for_join, on="Accident_Index", how="left")
 
+    # Pre-shuffle by Year to spread the load evenly across 32 partitions BEFORE write.
+    # Write directly without additional partitionBy to avoid extra overhead.
+    print(f"[f] writing {MERGED_PARQUET} (repartition to 32 by Year, then direct write) ...")
     (merged
-        .repartition(n_files_per_year)
-        .write.mode("overwrite")
-        .partitionBy("Year")
-        .parquet(str(MERGED_PARQUET)))
+         .repartition(32, F.col("Year"))
+         .write.mode("overwrite")
+         .parquet(str(MERGED_PARQUET)))
 
 
 # Orchastration
 def main() -> None:
+    # Increase socket timeout to 30 minutes before any Spark operations to prevent py4j timeouts
+    import socket
+    socket.setdefaulttimeout(1800)
+    
     INTERIM_DIR.mkdir(parents=True, exist_ok=True)
+
+    # Force stop any existing cached session to apply new config
+    from pyspark.sql import SparkSession
+    import pandas as pd
+    existing = SparkSession.getActiveSession()
+    if existing:
+        existing.stop()
 
     spark = get_spark("ingest")
     spark.sparkContext.setLogLevel("WARN")
@@ -560,20 +690,13 @@ def main() -> None:
     try:
         build_station_weather_parquet(spark)
     except Exception as e:
-        # Meteostat's CDN is unreliable. If fetching weather fails
-        # catastrophically, don't kill the whole pipeline — join_weather()
-        # below will fall back to NULL weather columns.
         print(f"[b] WARNING: weather fetch failed ({e!r}); continuing without weather")
 
-    # Main distributed pipeline
+    # Original distributed Spark pipeline
     raw_dir = download_dataset()
     accidents, vehicles = load_accidents_and_vehicles(spark, raw_dir)
 
-    # ── Checkpoint after the pandas_udf ────────────────────────────────
-    # Writing accidents+station_id to parquet here isolates the expensive
-    # (and Windows-fragile) nearest-station UDF stage from the later
-    # joins. If stage [e]/[f] crash, we don't re-run the 30-minute UDF;
-    # we just re-read this checkpoint.
+    # ── Checkpoint after the nearest-station stage ────────────────────────
     if not ACCIDENTS_WITH_STATION_PARQUET.exists():
         print("[d] running nearest-station UDF and checkpointing ...")
         accidents = attach_nearest_station(spark, accidents)
@@ -582,7 +705,7 @@ def main() -> None:
             .parquet(str(ACCIDENTS_WITH_STATION_PARQUET)))
         print(f"[d] checkpoint written → {ACCIDENTS_WITH_STATION_PARQUET}")
     else:
-        print(f"[d] checkpoint exists — skipping UDF, reading {ACCIDENTS_WITH_STATION_PARQUET}")
+        print(f"[d] checkpoint exists — reading {ACCIDENTS_WITH_STATION_PARQUET}")
 
     accidents   = spark.read.parquet(str(ACCIDENTS_WITH_STATION_PARQUET))
     acc_weather = join_weather(spark, accidents)

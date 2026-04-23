@@ -9,6 +9,11 @@ import platform
 import sys
 from pathlib import Path
 
+# Increase Py4j gateway socket timeout to 30 minutes (prevent premature timeouts during slow writes)
+os.environ['PYSPARK_GATEWAY_SOCKET_TIMEOUT'] = '1800'
+# Avoid invalid Spark URLs on Windows hosts with underscores in machine name.
+os.environ.setdefault('SPARK_LOCAL_HOSTNAME', 'localhost')
+
 from pyspark.sql import SparkSession
 
 
@@ -102,18 +107,32 @@ def get_spark(app_name: str = "road-accidents") -> SparkSession:
     Apache Arrow — faster pandas UDF and Spark-to-pandas conversions.
     shuffle_partitions = 32 — ~4x cores on an i5 (avoids overhead of 200 default).
     """
+    # Set Python executable for Spark workers
+    python_exec = sys.executable
+    
     return (
         SparkSession.builder
         .appName(app_name)
-        .master("local[*]")
-        .config("spark.driver.memory", "4g")
+        .master("local[4]")
+        .config("spark.driver.memory", "5g")
+        .config("spark.executor.memory", "5g")
         .config("spark.sql.shuffle.partitions", "32")
         .config("spark.sql.parquet.compression.codec", "snappy")
         .config("spark.sql.execution.arrow.pyspark.enabled", "true")
-        # Smaller Arrow batches — pandas_udf workers OOM/crash less often on
-        # Windows + Py3.10 with the default 10 000-row batch. 2 000 keeps
-        # per-batch peak memory small while still being vectorized.
+        .config("spark.pyspark.python", python_exec)
+        .config("spark.pyspark.driver.python", python_exec)
         .config("spark.sql.execution.arrow.maxRecordsPerBatch", "2000")
+        # Force loopback networking for local mode to avoid hostname URI issues.
+        .config("spark.driver.host", "127.0.0.1")
+        .config("spark.driver.bindAddress", "127.0.0.1")
+        .config("spark.local.hostName", "localhost")
+        # Keep shuffle buffers small to avoid executor heap blowups.
+        .config("spark.shuffle.file.buffer", "32k")
+        # Disable bypass merge sort path to reduce per-task writer pressure.
+        .config("spark.shuffle.sort.bypassMergeThreshold", "1")
+        .config("spark.shuffle.compress", "true")
+        .config("spark.rdd.compress", "true")
+        .config("spark.sql.adaptive.enabled", "false")
         # When a Python worker crashes, surface the real traceback instead
         # of just "Connection reset by peer". Essential for debugging UDFs.
         .config("spark.sql.execution.pyspark.udf.faulthandler.enabled", "true")
@@ -121,9 +140,12 @@ def get_spark(app_name: str = "road-accidents") -> SparkSession:
         .config("spark.hadoop.fs.file.impl", "org.apache.hadoop.fs.LocalFileSystem")
         .config("spark.hadoop.fs.file.impl.disable.cache", "true")
         .config("spark.hadoop.mapreduce.fileoutputcommitter.algorithm.version", "2")
-        .config("spark.executor.heartbeatInterval", "60s")   # was 10s default
-        .config("spark.network.timeout", "600s")             # was 120s default
+        .config("spark.executor.heartbeatInterval", "120s")  # Increase from 60s to allow slow I/O tasks
+        .config("spark.network.timeout", "1800s")            # Increase from 600s to 30 minutes for slow disk I/O
+        .config("spark.rpc.askTimeout", "1800s")             # Match network timeout
         .config("spark.sql.broadcastTimeout", "600")
         .config("spark.sql.ansi.enabled", "false")
+        .config("spark.python.worker.reuse", "true")         # Reuse workers to avoid startup overhead
+        .config("spark.rpc.message.maxSize", "512")          # Increase RPC message size for large payloads
         .getOrCreate()
     )
