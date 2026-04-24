@@ -17,17 +17,8 @@ from pyspark.ml import Pipeline
 from pyspark.sql import functions as F
 
 from src.config import get_spark, MERGED_PARQUET, PROCESSED_DIR
+from src.preprocessing import build_preprocessing_stages
 from src.preprocessing.clean import clean
-from src.preprocessing.encode import build_encoding_stages
-from src.preprocessing.scale import build_scaling_stages
-from src.preprocessing.assemble import build_assembler_stage
-
-
-def build_preprocessing_stages():
-    encode_stages, encoded_cols = build_encoding_stages()
-    scale_stages, scaled_vec_col = build_scaling_stages()
-    assembler = build_assembler_stage(scaled_vec_col, encoded_cols)
-    return encode_stages + scale_stages + [assembler]
 
 
 def main():
