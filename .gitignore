@@ -9,6 +9,7 @@ __pycache__/
 .venv/
 .env
 *.egg-info/
+big_data_venv/
 
 # IDE
 .vscode/
