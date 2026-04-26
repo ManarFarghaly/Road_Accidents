@@ -2,6 +2,8 @@
 data/raw/
 data/interim/
 data/processed/
+wetransfer_data_2026-04-25_1603.zip
+wetransfer_data_2026-04-25_1603/
 
 # Python
 __pycache__/

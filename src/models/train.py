@@ -26,14 +26,12 @@ from src.models.pipeline import build_model_pipeline
 # Internal helpers
 # ---------------------------------------------------------------------------
 
-def _compute_class_weights(df: DataFrame) -> dict[float, float]:
+def _compute_class_weights(df: DataFrame) -> dict[str, float]:
     """
     Balanced class weights:  class_weight = total / (n_classes * class_count)
 
-    Label mapping from preprocessing:
-        0.0 → Fatal  (~1 %)
-        1.0 → Serious (~14 %)
-        2.0 → Slight  (~85 %)
+    Uses Accident_Severity (the raw string column that exists before the
+    preprocessing Pipeline runs its StringIndexer to create 'label').
 
     A rare class (Fatal) gets a high weight so the model does not ignore it.
     A dominant class (Slight) gets a low weight to prevent it from drowning
@@ -41,38 +39,44 @@ def _compute_class_weights(df: DataFrame) -> dict[float, float]:
     """
     total = df.count()
     n_classes = 3
-    rows = df.groupBy("label").count().collect()
+    rows = df.groupBy("Accident_Severity").count().collect()
 
-    weights: dict[float, float] = {}
+    weights: dict[str, float] = {}
+    print("[weights] Class distribution:")
     for r in rows:
-        label = float(r["label"])
+        severity = r["Accident_Severity"]
         count = r["count"]
+        pct = 100.0 * count / total
         class_weight = total / (n_classes * count)
-        weights[label] = class_weight
+        weights[severity] = class_weight
+        print(f"          {severity:>8s}: {count:>9,} rows ({pct:5.1f}%)  →  weight = {class_weight:.4f}")
 
     return weights
 
-def _add_weight_col(df: DataFrame, weights: dict[float, float]) -> DataFrame:
+def _add_weight_col(df: DataFrame, weights: dict[str, float]) -> DataFrame:
     """
-    Appends a 'class_weight' column by looking up each row's label in a
-    Spark MapType column built from the weights dict.
+    Appends a 'class_weight' column by looking up each row's Accident_Severity
+    string in a Spark MapType column built from the weights dict.
+
+    We key on Accident_Severity (not 'label') because this function is called
+    before the Pipeline runs — 'label' does not exist yet at this point.
 
     F.create_map() expects a flat list of alternating key/value Column
     expressions:  [key0, val0, key1, val1, key2, val2, ...]
     We build that list explicitly so the structure is clear.
     """
-    # Build alternating [F.lit(label), F.lit(weight), ...] for create_map
+    # Build alternating [F.lit(severity), F.lit(weight), ...] for create_map
     map_args = []
-    for label, weight in weights.items():
-        map_args.append(F.lit(label))   # key   — the numeric label (0.0 / 1.0 / 2.0)
-        map_args.append(F.lit(weight))  # value — the computed class weight
+    for severity, weight in weights.items():
+        map_args.append(F.lit(severity))  # key   — severity string e.g. "Fatal"
+        map_args.append(F.lit(weight))    # value — the computed class weight
 
     # create_map turns those pairs into a Spark MapType column
-    # e.g. {0.0: 166.23, 1.0: 11.93, 2.0: 0.34}
-    label_to_weight = F.create_map(*map_args)
+    # e.g. {"Fatal": 166.23, "Serious": 11.93, "Slight": 0.34}
+    severity_to_weight = F.create_map(*map_args)
 
-    # Look up each row's label in the map to get its weight
-    return df.withColumn("class_weight", label_to_weight[F.col("label")])
+    # Look up each row's severity to get its weight
+    return df.withColumn("class_weight", severity_to_weight[F.col("Accident_Severity")])
 
 def _make_evaluator() -> MulticlassClassificationEvaluator:
     return MulticlassClassificationEvaluator(
@@ -104,7 +108,7 @@ def train_logistic_regression(
     """
     print("\n[LR] Building Logistic Regression pipeline ...")
     weights = _compute_class_weights(train_df)
-    print(f"[LR] Class weights: { {int(k): round(v, 3) for k, v in weights.items()} }")
+    print(f"[LR] Class weights: { {k: round(v, 3) for k, v in weights.items()} }")
     weighted_train = _add_weight_col(train_df, weights)
 
     lr = LogisticRegression(
@@ -178,7 +182,7 @@ def train_random_forest(
     """
     print("\n[RF] Building Random Forest pipeline ...")
     weights = _compute_class_weights(train_df)
-    print(f"[RF] Class weights: { {int(k): round(v, 3) for k, v in weights.items()} }")
+    print(f"[RF] Class weights: { {k: round(v, 3) for k, v in weights.items()} }")
     weighted_train = _add_weight_col(train_df, weights)
 
     # loss is Gini impurity (per split)
@@ -248,9 +252,9 @@ def train_gbt(
     """
     print("\n[GBT] Building Gradient-Boosted Trees (OneVsRest) pipeline ...")
 
-    # Gentle undersampling: keep all Fatal + Serious, sample 50 % of Slight
-    fatal_serious = train_df.filter(F.col("label") != 2.0)
-    slight = train_df.filter(F.col("label") == 2.0).sample(fraction=0.35, seed=42)
+    # Gentle undersampling: keep all Fatal + Serious, sample 35 % of Slight
+    fatal_serious = train_df.filter(F.col("Accident_Severity") != "Slight")
+    slight = train_df.filter(F.col("Accident_Severity") == "Slight").sample(fraction=0.35, seed=42)
     balanced_train = fatal_serious.union(slight)
     print(f"[GBT] Balanced training rows: {balanced_train.count():,}")
 

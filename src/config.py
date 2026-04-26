@@ -118,7 +118,7 @@ def get_spark(app_name: str = "road-accidents") -> SparkSession:
         .config("spark.executor.memory", "5g")
         .config("spark.sql.shuffle.partitions", "32")
         .config("spark.sql.parquet.compression.codec", "snappy")
-        .config("spark.sql.execution.arrow.pyspark.enabled", "true")
+        .config("spark.sql.execution.arrow.pyspark.enabled", "false")
         .config("spark.pyspark.python", python_exec)
         .config("spark.pyspark.driver.python", python_exec)
         .config("spark.sql.execution.arrow.maxRecordsPerBatch", "2000")
