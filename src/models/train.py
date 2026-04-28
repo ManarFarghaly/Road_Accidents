@@ -193,6 +193,7 @@ def train_random_forest(
         weightCol="class_weight",
         numTrees=100,
         maxDepth=10,
+        maxBins=50000,
         seed=42,
     )
     """
@@ -266,6 +267,7 @@ def train_gbt(
         labelCol="label",
         maxIter=50,
         maxDepth=5,
+        maxBins=50000,
         stepSize=0.1,
         seed=42,
     )
