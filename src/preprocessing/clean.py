@@ -34,10 +34,12 @@ They are legitimate (a coach crash really can have 30 casualties), tree models
 distinction vs step e above: "data error" = physically/legally impossible
 value (null out); "outlier" = extreme-but-real observation (keep).
 
-CLASS IMBALANCE The target distribution is roughly Slight 85 % / Serious 14 % / Fatal 1 %. Fatal is
+CLASS IMBALANCE is documented here but NOT handled in this module. The target
+distribution is roughly Slight 85 % / Serious 14 % / Fatal 1 %. Fatal is
 60× rarer than Slight. The recommended remedy is class weights passed to the
 classifier (classWeightCol in LR/RF/GBT) — this uses ALL training data with
-no information loss, unlike undersampling.
+no information loss, unlike undersampling. An undersampling helper is still
+provided for reference but class weights are the preferred approach.
 """
 from __future__ import annotations
 
@@ -68,6 +70,7 @@ LEAKAGE_COLS = [
 ]
 
 # ─── b. UK DfT sentinel string values meaning "missing" ──────────────────
+# Note we do NOT null "Not known" — that is a legitimate category for
 # Sex_of_Driver (76 k rows) and carries real signal.
 SENTINEL_STRINGS = [
     "Data missing or out of range",
@@ -205,17 +208,7 @@ def _fill_mode_by_group(df: DataFrame, target: str, group: str) -> DataFrame:
           .drop(f"{target}_grp_mode")
     )
 
-def _clean_column_names(df):
-    for col in df.columns:
-        new_col = (
-            col.replace(".", "_")
-               .replace("-", "_")
-               .replace("(", "")
-               .replace(")", "")
-               .replace(" ", "_")
-        )
-        df = df.withColumnRenamed(col, new_col)
-    return df
+
 # ══════════════════════════════════════════════════════════════════════════
 # Main entry point
 # ══════════════════════════════════════════════════════════════════════════
@@ -224,7 +217,6 @@ def clean(df: DataFrame) -> DataFrame:
     Run the full cleaning pipeline on the raw merged DataFrame.
     Returns the cleaned DataFrame ready for the Spark ML Pipeline.
     """
-    df = _clean_column_names(df)
     # a ─ drop noise + leakage columns
     to_drop = [c for c in HIGH_MISSING_COLS + LEAKAGE_COLS if c in df.columns]
     if to_drop:
@@ -245,19 +237,15 @@ def clean(df: DataFrame) -> DataFrame:
     for c in NUMERIC_CAST_COLS:
         if c in df.columns:
             df = df.withColumn(c, F.col(c).cast("double"))
-  
-   # b ─ null out DfT sentinel strings across all string columns (vectorized)
+
+    # b ─ null out DfT sentinel strings across all string columns
     str_cols = [f.name for f in df.schema.fields if f.dataType.simpleString() == "string"]
+    for c in str_cols:
+        df = df.withColumn(
+            c,
+            F.when(F.col(c).isin(SENTINEL_STRINGS), None).otherwise(F.col(c)),
+        )
 
-    exprs = [
-        F.when(F.col(f"`{c}`").isin(SENTINEL_STRINGS), None)
-        .otherwise(F.col(f"`{c}`"))
-        .alias(c)
-        if c in str_cols else F.col(f"`{c}`")
-        for c in df.columns
-    ]
-
-    df = df.select(*exprs)
     # b' ─ fix Day_of_Week inconsistencies (Phase 2: ~2 mismatches found)
     # Date is the source of truth — Day_of_Week is derivable and should match.
     if "Date" in df.columns and "Day_of_Week" in df.columns:
@@ -394,3 +382,38 @@ def add_class_weights(df: DataFrame,
     return df.withColumn(weight_col, expr)
 
 
+# ══════════════════════════════════════════════════════════════════════════
+# Optional helper — undersampling (kept for reference, not recommended)
+# ══════════════════════════════════════════════════════════════════════════
+def rebalance_undersample(
+    df: DataFrame,
+    label_col: str = "Accident_Severity",
+    ratio: float = 3.0,
+    seed: int = 42,
+) -> DataFrame:
+    """
+    Undersample the majority class so the largest class is at most
+    `ratio` × the smallest class.
+
+    WARNING: This deletes ~90% of training data (2.17M → 198K rows).
+    Use compute_class_weights() + add_class_weights() instead — same
+    mathematical effect with zero data loss.
+
+    IMPORTANT: call ONLY on the training split, never on test.
+    """
+    counts = {r[label_col]: r["count"] for r in df.groupBy(label_col).count().collect()}
+    if not counts:
+        return df
+
+    min_count = min(counts.values())
+    target_count = int(min_count * ratio)
+
+    parts = []
+    for cls, n in counts.items():
+        frac = min(1.0, target_count / n)
+        parts.append(df.filter(F.col(label_col) == cls).sample(frac, seed=seed))
+
+    out = parts[0]
+    for p in parts[1:]:
+        out = out.unionByName(p)
+    return out
