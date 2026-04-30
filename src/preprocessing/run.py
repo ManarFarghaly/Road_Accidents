@@ -15,7 +15,7 @@ from pyspark.ml import Pipeline
 from pyspark.sql import functions as F
 
 from src.config import get_spark, MERGED_PARQUET, PROCESSED_DIR
-from src.preprocessing.clean import clean, rebalance_undersample
+from src.preprocessing.clean import clean, compute_class_weights,add_class_weights
 from src.preprocessing.encode import build_encoding_stages
 from src.preprocessing.scale import build_scaling_stages
 from src.preprocessing.assemble import build_assembler_stage
@@ -50,7 +50,7 @@ def main():
     # Label distribution before split
     print("\n    Label distribution (full cleaned):")
     cleaned.groupBy("Accident_Severity").count() \
-           .orderBy("Accident_Severity").show()
+        .orderBy("Accident_Severity").show()
 
     # ── 3. Train / Test split — split BEFORE rebalancing ──────────────
     print("\n[3] Splitting 80/20 train/test ...")
@@ -61,12 +61,8 @@ def main():
 
     # ── 4. Rebalance training split only ──────────────────────────────
     print("\n[4] Rebalancing training split (undersample majority) ...")
-    train = rebalance_undersample(train_raw, ratio=3.0, seed=42)
-    train_balanced_count = train.count()
-    print(f"    Balanced train rows: {train_balanced_count:,}")
-    print("\n    Label distribution after rebalancing (train only):")
-    train.groupBy("Accident_Severity").count() \
-         .orderBy("Accident_Severity").show()
+    weights = compute_class_weights(train_raw)
+    train = add_class_weights(train_raw,weights)    
 
     # ── 5. Fit preprocessing pipeline on training data ONLY ───────────
     print("\n[5] Fitting preprocessing pipeline on training data ...")
@@ -75,13 +71,11 @@ def main():
     model = pipeline.fit(train)
     print(f"    Pipeline fitted with {len(stages)} stages.")
 
-    # ── 6. Transform both splits ───────────────────────────────────────
     print("\n[6] Transforming train and test splits ...")
     train_out = model.transform(train)
     test_out  = model.transform(test)
 
-    # Keep only what the model needs — avoids writing 64 raw cols to disk
-    final_cols = ["features", "label"]
+    final_cols = ["features", "label","classWeight"]
     train_final = train_out.select(final_cols)
     test_final  = test_out.select(final_cols)
 
