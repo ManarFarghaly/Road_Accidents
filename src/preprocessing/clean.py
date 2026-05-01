@@ -1,53 +1,10 @@
-"""
-Data Cleaning.
-
-Eager cleaning function that runs on the raw merged DataFrame *before*
-the Spark ML Pipeline is built. Addresses every finding from the
-8-dimension validation report.
-
-Order of operations (each step is idempotent and commented with its
-MCAR/MAR/MNAR justification where relevant):
-
-    a   Drop 6 noise cols (>85 % missing OR 81 %-dominated by "Unclassified")
-    a'  Drop target-leakage cols (Number_of_Casualties — STATS19 defines
-        severity FROM casualty counts; Did_Police_Officer_Attend — recorded
-        AFTER severity is assessed, so it leaks the target)
-    a'' Rename Engine_Capacity_.CC. → Engine_Capacity_CC (dots break Spark ML)
-    a'''Cast numeric columns to double (CSV inferSchema reads some as string)
-    b   Null out UK DfT sentinel strings ("Data missing or out of range", etc.)
-    b'  Fix Day_of_Week inconsistencies — derive correct value from Date column
-        (Phase 2 Validation found ~2 rows where Day_of_Week ≠ date.day_name())
-    b'' Null out invalid Age_Band_of_Driver codes (4,664 invalid per Phase 2)
-    b'''Standardize Sex_of_Driver codes (M→Male, F→Female, 3→Not known)
-    c   Null out numeric -1 "unknown" codes
-    d   Snap Speed_limit outliers to the nearest UK legal limit
-    e   Enforce validity bounds (Lat/Lon UK box, Engine_Capacity 50-8000cc,
-        Age_of_Vehicle 0-100, Number_of_Vehicles ≥1) — real DATA ERRORS → NULL
-    e'  Drop rows missing required fields (Severity target + Lat/Lon)
-    g   Median-impute remaining numeric NULLs (MAR, robust to skew)
-    h   Mode-by-group impute for `model` (model depends on make)
-    i   "Unknown" fill for remaining cats (MAR / MNAR — own level)
-
-STATISTICAL OUTLIERS (IQR flagged 47 k in Number_of_Vehicles) are kept as-is.
-They are legitimate (a coach crash really can have 30 casualties), tree models
-(RF/GBT) are outlier-robust, and StandardScaler re-centers LR inputs. Note the
-distinction vs step e above: "data error" = physically/legally impossible
-value (null out); "outlier" = extreme-but-real observation (keep).
-
-CLASS IMBALANCE is documented here but NOT handled in this module. The target
-distribution is roughly Slight 85 % / Serious 14 % / Fatal 1 %. Fatal is
-60× rarer than Slight. The recommended remedy is class weights passed to the
-classifier (classWeightCol in LR/RF/GBT) — this uses ALL training data with
-no information loss, unlike undersampling. An undersampling helper is still
-provided for reference but class weights are the preferred approach.
-"""
 from __future__ import annotations
 
 from pyspark.sql import DataFrame, Window, functions as F
 from pyspark.ml.feature import Imputer
 
 
-# ─── a. columns with so much missing/garbage they carry no signal ─────────
+
 HIGH_MISSING_COLS = [
     "Carriageway_Hazards",            # 98.07 %
     "Special_Conditions_at_Site",     # 97.45 %
@@ -57,30 +14,25 @@ HIGH_MISSING_COLS = [
     "2nd_Road_Class",                 # 41 % NA + 40 % "Unclassified" = 81 % noise
 ]
 
-# ─── a'. target-leakage columns ───────────────────────────────────────────
-# Number_of_Casualties: STATS19 defines severity directly from casualty counts
-#   — Fatal ≥1 death, Serious ≥1 serious injury, Slight = only slight injuries.
-#   Using it gives ~99% accuracy by reading the answer from another column.
-# Did_Police_Officer_Attend: Police decide whether to attend BASED ON severity.
-#   Fatal/Serious → almost always attended; Slight → often not.
-#   This value is recorded after severity is assessed, so it leaks the target.
 LEAKAGE_COLS = [
     "Number_of_Casualties",
     "Did_Police_Officer_Attend_Scene_of_Accident",
 ]
 
-# ─── b. UK DfT sentinel string values meaning "missing" ──────────────────
+# b. UK DfT sentinel string values meaning "missing" 
 # Note we do NOT null "Not known" — that is a legitimate category for
 # Sex_of_Driver (76 k rows) and carries real signal.
 SENTINEL_STRINGS = [
     "Data missing or out of range",
     "Unknown",
-    "unknown",
-    "N/A",
-    "",
+    "unknown", 
+    "Null",
+    "NULL",
+    "[null]",
+    "null"
 ]
 
-# ─── b''. valid Age_Band_of_Driver values ────────────────────────────────
+#  b''. valid Age_Band_of_Driver values 
 # Phase 2 found 4,664 records with invalid age band codes.
 # UK STATS19 uses these exact strings — anything else is a data error.
 VALID_AGE_BANDS = [
@@ -96,6 +48,8 @@ REQUIRED_COLS = [
     "Accident_Severity",
     "Latitude",
     "Longitude",
+    "Accident_Index",
+    "Speed_limit",
 ]
 
 # ─── f. validity bounds — real data errors ────────────────────────────────
@@ -113,7 +67,7 @@ NUM_IMPUTE_COLS = [
     "Engine_Capacity_CC",   # 12 % missing — MAR
     "Driver_IMD_Decile",    # 34 % missing — MAR (foreign postcodes)
     # Weather features — MCAR (no observation for that station/date pair)
-    "tavg", "tmin", "tmax", "prcp", "snow", "wspd", "pres",
+    "tmin", "tmax", "prcp","wspd", "pres","temp","rhum","snwd","wpgt","tsun","cldc" # need to know i
 ]
 
 # ─── h. group-wise mode imputation ───────────────────────────────────────
@@ -132,8 +86,8 @@ CAT_IMPUTE_COLS = [
     "Road_Type",
     "Vehicle_Type",
     "make",
-    "Age_Band_of_Driver",   # added — gets nulled in step b'' for invalid codes
-    "Sex_of_Driver",        # added — standardized in step b''' but may still have nulls
+    "Age_Band_of_Driver",   
+    "Sex_of_Driver",        
 ]
 
 LABEL_COL = "Accident_Severity"
@@ -207,11 +161,17 @@ def _fill_mode_by_group(df: DataFrame, target: str, group: str) -> DataFrame:
           )
           .drop(f"{target}_grp_mode")
     )
-
-
-# ══════════════════════════════════════════════════════════════════════════
+    
+def _handle_is_scotland(df: DataFrame) -> DataFrame:
+    if "InScotland" in df.columns:
+        df = df.withColumn(
+        "InScotland",
+        F.when(F.col("InScotland") == "Yes", 1.0)
+        .when(F.col("InScotland") == "No", 0.0)
+        .otherwise(None)
+        )
+    return df
 # Main entry point
-# ══════════════════════════════════════════════════════════════════════════
 def clean(df: DataFrame) -> DataFrame:
     """
     Run the full cleaning pipeline on the raw merged DataFrame.
@@ -237,7 +197,7 @@ def clean(df: DataFrame) -> DataFrame:
     for c in NUMERIC_CAST_COLS:
         if c in df.columns:
             df = df.withColumn(c, F.col(c).cast("double"))
-
+    df = _handle_is_scotland(df)
     # b ─ null out DfT sentinel strings across all string columns
     str_cols = [f.name for f in df.schema.fields if f.dataType.simpleString() == "string"]
     for c in str_cols:
@@ -301,7 +261,12 @@ def clean(df: DataFrame) -> DataFrame:
             df = df.filter(F.col(c).isNotNull())
 
     # g ─ median impute numeric NULLs (MAR — median robust to skew)
-    num_present = [c for c in NUM_IMPUTE_COLS if c in df.columns]
+    # Only impute columns that are actually present and not entirely null.
+    # An all-null column causes Imputer.fit() to raise an error.
+    num_present = [
+        c for c in NUM_IMPUTE_COLS
+        if c in df.columns and df.filter(F.col(c).isNotNull()).limit(1).count() > 0
+    ]
     if num_present:
         imputer = Imputer(
             inputCols=num_present,
@@ -311,6 +276,8 @@ def clean(df: DataFrame) -> DataFrame:
         df = imputer.fit(df).transform(df)
 
     # h ─ group-wise mode fill (model ← mode per make)
+    # Cache before the expensive Window to avoid replaying the full pipeline.
+    df.cache()
     for target, group in GROUP_MODE_IMPUTE:
         df = _fill_mode_by_group(df, target, group)
 
@@ -324,9 +291,6 @@ def clean(df: DataFrame) -> DataFrame:
     return df
 
 
-# ══════════════════════════════════════════════════════════════════════════
-# Class-weight helper — RECOMMENDED over undersampling
-# ══════════════════════════════════════════════════════════════════════════
 def compute_class_weights(df: DataFrame, label_col: str = "Accident_Severity") -> dict:
     """
     Compute inverse-frequency class weights for use with Spark ML classifiers
@@ -380,40 +344,3 @@ def add_class_weights(df: DataFrame,
         expr = F.when(condition, w) if expr is None else expr.when(condition, w)
     expr = expr.otherwise(1.0)
     return df.withColumn(weight_col, expr)
-
-
-# ══════════════════════════════════════════════════════════════════════════
-# Optional helper — undersampling (kept for reference, not recommended)
-# ══════════════════════════════════════════════════════════════════════════
-def rebalance_undersample(
-    df: DataFrame,
-    label_col: str = "Accident_Severity",
-    ratio: float = 3.0,
-    seed: int = 42,
-) -> DataFrame:
-    """
-    Undersample the majority class so the largest class is at most
-    `ratio` × the smallest class.
-
-    WARNING: This deletes ~90% of training data (2.17M → 198K rows).
-    Use compute_class_weights() + add_class_weights() instead — same
-    mathematical effect with zero data loss.
-
-    IMPORTANT: call ONLY on the training split, never on test.
-    """
-    counts = {r[label_col]: r["count"] for r in df.groupBy(label_col).count().collect()}
-    if not counts:
-        return df
-
-    min_count = min(counts.values())
-    target_count = int(min_count * ratio)
-
-    parts = []
-    for cls, n in counts.items():
-        frac = min(1.0, target_count / n)
-        parts.append(df.filter(F.col(label_col) == cls).sample(frac, seed=seed))
-
-    out = parts[0]
-    for p in parts[1:]:
-        out = out.unionByName(p)
-    return out

@@ -191,25 +191,6 @@ def load_tables(log_lines: list):
 # ════════════════════════════════════════════════════════════════════════════
 
 def check_accuracy(acc: pd.DataFrame, veh: pd.DataFrame, log_lines: list, report: dict):
-    """
-    Performs accuracy validation checks based on UK road accident business rules.
-    
-    Validates that data correctly represents reality by checking:
-    - Accident_Severity is one of 3 valid classes (Slight/Serious/Fatal)
-    - Speed_limit is a valid UK legal limit (20, 30, 40, 50, 60, 70 mph)
-    - Coordinates fall within UK geographic bounds (49-61°N, -8 to 2°E)
-    - Number_of_Vehicles is positive (≥1)
-    - Age_of_Vehicle is non-negative
-    - Age_Band_of_Driver contains valid age bands
-    - Day_of_Week contains valid day names
-    - Sex_of_Driver is Male or Female
-    
-    Args:
-        acc (pd.DataFrame): The accidents DataFrame.
-        veh (pd.DataFrame): The vehicles DataFrame.
-        log_lines (list): The list for logging messages.
-        report (dict): The main report dictionary to update with findings.
-    """
     log("\n" + "-" * 65, log_lines)
     log("DIMENSION 1 — ACCURACY", log_lines)
     log("-" * 65, log_lines)
@@ -300,26 +281,9 @@ def check_accuracy(acc: pd.DataFrame, veh: pd.DataFrame, log_lines: list, report
     report["dimensions"]["accuracy"] = dim
 
 
-# ════════════════════════════════════════════════════════════════════════════
 #  DIMENSION 2 — CONSISTENCY
-#  Is data uniform across fields, formats, and both tables?
-# ════════════════════════════════════════════════════════════════════════════
-
 def check_consistency(acc: pd.DataFrame, veh: pd.DataFrame, log_lines: list, report: dict):
-    """    
-    Validates that data is uniform across fields and both tables by checking:
-    - Date column parses correctly as datetime (YYYY-MM-DD format)
-    - Year column matches the year extracted from Date
-    - Day_of_Week matches the actual day calculated from Date
-    - Time follows HH:MM format
-    - Year values are consistent across accidents and vehicles tables for the same accident
-    
-    Args:
-        acc (pd.DataFrame): The accidents DataFrame.
-        veh (pd.DataFrame): The vehicles DataFrame.
-        log_lines (list): The list for logging messages.
-        report (dict): The main report dictionary to update with findings.
-    """
+
     log("\n" + "-" * 65, log_lines)
     log("DIMENSION 2 — CONSISTENCY", log_lines)
     log("-" * 65, log_lines)
@@ -389,26 +353,9 @@ def check_consistency(acc: pd.DataFrame, veh: pd.DataFrame, log_lines: list, rep
 
     report["dimensions"]["consistency"] = dim
 
-# ════════════════════════════════════════════════════════════════════════════
 #  DIMENSION 3 — COMPLETENESS
-#  Is all required data present? Missing value analysis per column.
-# ════════════════════════════════════════════════════════════════════════════
-
 def check_completeness(acc: pd.DataFrame, veh: pd.DataFrame, log_lines: list, report: dict):
-    """
-    Performs comprehensive missing value analysis:
-    - Identifies all columns with missing data
-    - Calculates missing counts and percentages
-    - Flags required columns with any nulls
-    - Flags any column with >20% missing values
-    - Displays top 12 columns by missing percentage
-    
-    Args:
-        acc (pd.DataFrame): The accidents DataFrame.
-        veh (pd.DataFrame): The vehicles DataFrame.
-        log_lines (list): The list for logging messages.
-        report (dict): The main report dictionary to update with findings.
-    """
+
     log("\n" + "-" * 65, log_lines)
     log("DIMENSION 3 — COMPLETENESS", log_lines)
     log("-" * 65, log_lines)
@@ -546,24 +493,9 @@ def check_uniqueness(acc: pd.DataFrame, veh: pd.DataFrame, log_lines: list, repo
     report["dimensions"]["uniqueness"] = dim
 
 
-# ════════════════════════════════════════════════════════════════════════════
 #  DIMENSION 5 — OUTLIERS
 #  IQR method + Z-score method + Isolation Forest (all 3 from lecture)
-# ════════════════════════════════════════════════════════════════════════════
-
 def check_outliers(acc: pd.DataFrame, veh: pd.DataFrame, log_lines: list, report: dict):
-    """
-    Applies three outlier detection approaches:
-    1. IQR Method (univariate): Flags values outside Q1 - 1.5*IQR to Q3 + 1.5*IQR
-    2. Isolation Forest (multivariate): Detects anomalies using ensemble method
-       with 5% contamination rate
-    
-    Args:
-        acc (pd.DataFrame): The accidents DataFrame.
-        veh (pd.DataFrame): The vehicles DataFrame.
-        log_lines (list): The list for logging messages.
-        report (dict): The main report dictionary to update with findings.
-    """
     log("\n" + "-" * 65, log_lines)
     log("DIMENSION 5 — OUTLIERS", log_lines)
     log("-" * 65, log_lines)
@@ -579,7 +511,7 @@ def check_outliers(acc: pd.DataFrame, veh: pd.DataFrame, log_lines: list, report
 
     iqr_res = {}
     for df, cols, label in [(acc, COLS_ACC, "accidents"),
-                             (veh, COLS_VEH, "vehicles")]:
+                            (veh, COLS_VEH, "vehicles")]:
         for col in cols:
             if col not in df.columns:
                 continue
@@ -600,7 +532,7 @@ def check_outliers(acc: pd.DataFrame, veh: pd.DataFrame, log_lines: list, report
     iso_res = {}
 
     for df, cols, label in [(acc, COLS_ACC, "accidents"),
-                             (veh, COLS_VEH, "vehicles")]:
+                            (veh, COLS_VEH, "vehicles")]:
         avail = [c for c in cols if c in df.columns]
         if len(avail) < 2:
             continue
@@ -628,7 +560,6 @@ def check_outliers(acc: pd.DataFrame, veh: pd.DataFrame, log_lines: list, report
 
 # ════════════════════════════════════════════════════════════════════════════
 #  DIMENSION 6 — TIMELINESS
-#  Date range validity, year coverage, COVID dip detection.
 # ════════════════════════════════════════════════════════════════════════════
 
 def check_timeliness(acc: pd.DataFrame, log_lines: list, report: dict):
@@ -686,23 +617,7 @@ def check_timeliness(acc: pd.DataFrame, log_lines: list, report: dict):
 #  Descriptive stats + skewness + kurtosis + KS test vs normal
 # ════════════════════════════════════════════════════════════════════════════
 
-def check_distribution(acc: pd.DataFrame, veh: pd.DataFrame, log_lines: list, report: dict):
-    """    
-    Performs comprehensive distribution analysis:
-    - Descriptive statistics (min, max, mean, median, std)
-    - Shape metrics (skewness, kurtosis)
-    - Cardinality (unique value counts)
-    - Histograms (10 equal-width bins with ASCII bar charts)
-    - Kolmogorov-Smirnov test against normal distribution
-    - Target class distribution (Accident_Severity)
-    - Categorical feature value distributions
-    
-    Args:
-        acc (pd.DataFrame): The accidents DataFrame.
-        veh (pd.DataFrame): The vehicles DataFrame.
-        log_lines (list): The list for logging messages.
-        report (dict): The main report dictionary to update with findings.
-    """    
+def check_distribution(acc: pd.DataFrame, veh: pd.DataFrame, log_lines: list, report: dict):  
     log("\n" + "-" * 65, log_lines)
     log("DIMENSION 7 — DISTRIBUTION PROFILE", log_lines)
     log("-" * 65, log_lines)
@@ -710,7 +625,7 @@ def check_distribution(acc: pd.DataFrame, veh: pd.DataFrame, log_lines: list, re
 
     COLS_ACC = ["Speed_limit", "Number_of_Casualties", "Number_of_Vehicles",
                 "Latitude", "Longitude"]
-    COLS_VEH = ["Age_of_Vehicle", "Engine_Capacity_.CC."]
+    COLS_VEH = ["Age_of_Vehicle", "Engine_Capacity_.CC.", "Driver_IMD_Decile"]
 
     log(f"\n  {'Column':<42} {'Min':>7} {'Max':>8} {'Mean':>8} "
         f"{'Median':>8} {'Std':>8} {'Skew':>7} {'Kurt':>7}  {'Card':>6}", log_lines)
@@ -1169,18 +1084,6 @@ def generate_pdf_report(pdf_path, total, report,log_lines):
         safe_line = line.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
         elements.append(Paragraph(safe_line if safe_line.strip() else "&nbsp;", mono_style))
 
-    # if report.get("dimensions"):
-    #     elements.append(PageBreak())
-    #     elements.append(Paragraph("Validation Summary by Dimension", styles['Heading2']))
-    #     elements.append(Spacer(1, 0.15*inch))
-        
-    #     for dim_name, dim_data in report["dimensions"].items():
-    #         if isinstance(dim_data, dict):
-    #             elements.append(Paragraph(f"<b>{dim_name.upper()}</b>", styles['Heading3']))
-    #             summary_text = f"{len(dim_data)} checks performed"
-    #             elements.append(Paragraph(summary_text, styles['Normal']))
-    #             elements.append(Spacer(1, 0.1*inch))
-    
     doc.build(elements)
 
 

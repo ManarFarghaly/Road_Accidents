@@ -18,7 +18,6 @@ NUMERIC_COLS = [
     # Accident numerics
     "Speed_limit",
     "Number_of_Vehicles",
-    
     "Latitude",
     "Longitude",
     # Vehicle numerics
@@ -49,6 +48,7 @@ def build_scaling_stages() -> tuple[list, str]:
         handleInvalid="skip",       # any remaining null → row dropped at fit time
     )
     scaler = StandardScaler(
+        
         inputCol="numeric_raw",
         outputCol="numeric_scaled",
         withMean=True,
