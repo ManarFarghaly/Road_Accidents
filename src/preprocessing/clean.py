@@ -12,6 +12,11 @@ HIGH_MISSING_COLS = [
     "Hit_Object_off_Carriageway",     # 91.39 %
     "Skidding_and_Overturning",       # 87.19 %
     "2nd_Road_Class",                 # 41 % NA + 40 % "Unclassified" = 81 % noise
+    "wpgt",
+    "prcp",
+    "snwd",
+    "tsun",
+    "cldc",
 ]
 
 LEAKAGE_COLS = [
@@ -50,6 +55,9 @@ REQUIRED_COLS = [
     "Longitude",
     "Accident_Index",
     "Speed_limit",
+    "Vehicle_Reference",
+    "Time",
+    "Date",
 ]
 
 # ─── f. validity bounds — real data errors ────────────────────────────────
@@ -66,8 +74,28 @@ NUM_IMPUTE_COLS = [
     "Age_of_Vehicle",       # 16 % missing — MAR (foreign / unregistered)
     "Engine_Capacity_CC",   # 12 % missing — MAR
     "Driver_IMD_Decile",    # 34 % missing — MAR (foreign postcodes)
+    "Location_Easting_OSGR",
+    "Location_Northing_OSGR",
+     "Number_of_Occupants",
+    "Year", 
     # Weather features — MCAR (no observation for that station/date pair)
-    "tmin", "tmax", "prcp","wspd", "pres","temp","rhum","snwd","wpgt","tsun","cldc" # need to know i
+    "tmin", "tmax", "pres","temp","rhum" ,"wspd",
+]
+-
+MODE_IMPUTE_COLS = [
+    "Road_Type",
+    "Weather_Conditions",
+    "Light_Conditions",
+    "Road_Surface_Conditions",
+    "Sex_of_Driver",
+    "Was_Vehicle_Left_Hand_Drive",
+    "Propulsion_Code",
+    "Towing_and_Articulation",
+    "Age_Band_of_Driver",
+    "InScotland"            
+    "Date",
+    "Day_of_Week",
+    "Time"
 ]
 
 # ─── h. group-wise mode imputation ───────────────────────────────────────
@@ -75,27 +103,30 @@ GROUP_MODE_IMPUTE = [
     ("model", "make"),    # fill null model with mode(model) per make
 ]
 
-# ─── i. remaining categoricals — "Unknown" fill ───────────────────────────
+# ─── i. remaining categoricals — "Unknown"  category ───────────────────────────
 CAT_IMPUTE_COLS = [
+    "1st_Road_Class","Urban_or_Rural_Area",
+    "Pedestrian_Crossing-Human_Control",
     "LSOA_of_Accident_Location",
-    "Weather_Conditions",
-    "Road_Surface_Conditions",
-    "Light_Conditions",
+    "Special_Conditions_at_Site",
     "Junction_Detail",
     "Junction_Control",
     "Road_Type",
     "Vehicle_Type",
     "make",
-    "Age_Band_of_Driver",   
-    "Sex_of_Driver",        
+    "Junction_Location",
+    "Vehicle_Leaving_Carriageway",
+    "X1st_Point_of_Impact",
+    "Journey_Purpose_of_Driver",
+    "Driver_Home_Area_Type",
+    "Vehicle_Manoeuvre", 
+    "Vehicle_Location.Restricted_Lane",
+    "X1st_Point_of_Impact","2nd_Road_Number","1st_Road_Number","Local_Authority_(District)","Local_Authority_(Highway)","Police_Force",
 ]
-
 LABEL_COL = "Accident_Severity"
-
-
-# ══════════════════════════════════════════════════════════════════════════
+# 
 # Helpers
-# ══════════════════════════════════════════════════════════════════════════
+# 
 def _snap_speed_limit(df: DataFrame) -> DataFrame:
     """
     Snap 36 invalid Speed_limit values to nearest UK legal limit.
@@ -192,7 +223,8 @@ def clean(df: DataFrame) -> DataFrame:
     NUMERIC_CAST_COLS = [
         "Speed_limit", "Number_of_Vehicles", "Latitude", "Longitude",
         "Age_of_Vehicle", "Engine_Capacity_CC", "Driver_IMD_Decile",
-        "tavg", "tmin", "tmax", "prcp", "snow", "wspd", "pres",
+        "temp", "tmin", "tmax", "prcp", "snwd", "wspd", "pres",
+        "rhum", "wpgt", "tsun", "cldc"
     ]
     for c in NUMERIC_CAST_COLS:
         if c in df.columns:
@@ -211,7 +243,7 @@ def clean(df: DataFrame) -> DataFrame:
     if "Date" in df.columns and "Day_of_Week" in df.columns:
         df = df.withColumn(
             "Day_of_Week",
-            F.date_format(F.to_date(F.col("Date"), "yyyy-MM-dd"), "EEEE"),
+            F.date_format(F.col("Date"), "EEEE")
         )
 
     # b'' ─ null out invalid Age_Band_of_Driver codes (Phase 2: 4,664 invalid)
@@ -278,6 +310,7 @@ def clean(df: DataFrame) -> DataFrame:
     # h ─ group-wise mode fill (model ← mode per make)
     # Cache before the expensive Window to avoid replaying the full pipeline.
     df.cache()
+    df.count() 
     for target, group in GROUP_MODE_IMPUTE:
         df = _fill_mode_by_group(df, target, group)
 

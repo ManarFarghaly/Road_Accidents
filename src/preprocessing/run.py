@@ -16,17 +16,29 @@ from pyspark.sql import functions as F
 
 from src.config import get_spark, MERGED_PARQUET, PROCESSED_DIR
 from src.preprocessing.clean import clean, compute_class_weights,add_class_weights
-from src.preprocessing.encode import build_encoding_stages
-from src.preprocessing.scale import build_scaling_stages
+from src.preprocessing.encode import build_encoding_stages_lr, build_encoding_stages_trees
+from src.preprocessing.scale import build_scaling_stages_for_lr, build_scaling_stages_for_trees
 from src.preprocessing.assemble import build_assembler_stage
 
+from __future__ import annotations
 
-def build_preprocessing_stages():
-    encode_stages, encoded_cols = build_encoding_stages()
-    scale_stages, scaled_vec_col = build_scaling_stages()
+MODEL_TYPES = {"lr", "trees"}
+
+
+def build_preprocessing_stages(model_type: str = "trees") -> list:
+    if model_type not in MODEL_TYPES:
+        raise ValueError(f"model_type must be one of {MODEL_TYPES}, got {model_type!r}")
+
+    if model_type == "lr":
+        encode_stages, encoded_cols = build_encoding_stages_lr()
+        scale_stages, scaled_vec_col = build_scaling_stages_for_lr()
+    else:
+        encode_stages, encoded_cols = build_encoding_stages_trees()
+        scale_stages, scaled_vec_col = build_scaling_stages_for_trees()
+
     assembler = build_assembler_stage(scaled_vec_col, encoded_cols)
-    return encode_stages + scale_stages + [assembler]
 
+    return encode_stages + scale_stages + [assembler]
 
 def main():
     PROCESSED_DIR.mkdir(parents=True, exist_ok=True)

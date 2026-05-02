@@ -1,14 +1,4 @@
-"""
-Feature Assembly.
 
-Final VectorAssembler that concatenates:
-    - the scaled-numeric vector (from scale.py)
-    - one-hot vectors for low-cardinality categoricals (from encode.py)
-    - integer indices for high-cardinality categoricals (from encode.py)
-
-into a single `features` column. This is the exact column name the
-modelling person reads from.
-"""
 from __future__ import annotations
 
 from pyspark.ml.feature import VectorAssembler
@@ -31,5 +21,5 @@ def build_assembler_stage(
     return VectorAssembler(
         inputCols=[scaled_vec_col] + encoded_cols,
         outputCol="features",
-        handleInvalid="skip",
+        handleInvalid="error",    
     )
