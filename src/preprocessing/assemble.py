@@ -21,5 +21,5 @@ def build_assembler_stage(
     return VectorAssembler(
         inputCols=[scaled_vec_col] + encoded_cols,
         outputCol="features",
-        handleInvalid="error",    
+        handleInvalid="keep",    
     )

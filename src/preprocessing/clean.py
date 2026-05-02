@@ -67,9 +67,6 @@ NUM_IMPUTE_COLS = [
     "Location_Northing_OSGR",
     # Weather — MCAR
     "tmin", "tmax", "pres", "temp", "rhum", "wspd",
-    #  REMOVED ─
-    # "Number_of_Occupants"  ← not in schema → crashes Imputer.fit()
-    # "Year"                 ← partition key, never impute
 ]
 
 MODE_IMPUTE_COLS = [

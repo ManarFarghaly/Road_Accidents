@@ -6,7 +6,7 @@ from pyspark.ml.feature import VectorAssembler
 
 from src.config import get_spark, MERGED_PARQUET, PROCESSED_DIR, INTERIM_DIR
 from src.preprocessing.clean import clean, compute_class_weights, add_class_weights
-from src.preprocessing.encode import build_encoding_stages_lr, build_encoding_stages_trees
+from src.preprocessing.encode import build_encoding_stages_lr, build_encoding_stages_trees, fit_target_encoding, apply_target_encoding, fit_and_apply_target_encodings
 from src.preprocessing.scale import build_scaling_stages_for_lr, build_scaling_stages_for_trees
 from src.preprocessing.assemble import build_assembler_stage
 
@@ -84,6 +84,10 @@ def main():
     weights = compute_class_weights(train_raw)
     print(f"    Weights: { {k: f'{v:.2f}' for k, v in weights.items()} }")
     train = add_class_weights(train_raw, weights)
+
+    print("\n[4b] Fitting and applying target encoding ...")
+    train, test = fit_and_apply_target_encodings(train, test, smoothing=10.0)
+    print(f"    Added columns: {[c + '_te' for c in ['model', 'LSOA_of_Accident_Location']]}")
 
     # ── 5. Fit preprocessing pipeline on training data ONLY ───────────────
     print("\n[5] Fitting preprocessing pipeline on training data ...")
