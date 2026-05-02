@@ -33,3 +33,4 @@ from src.preprocessing.assemble import build_assembler_stage
 from src.preprocessing.clean import clean, compute_class_weights , add_class_weights
 from src.preprocessing.encode import build_encoding_stages_trees, build_encoding_stages_lr
 from src.preprocessing.scale import build_scaling_stages_for_lr, build_scaling_stages_for_trees
+from src.preprocessing.run import build_preprocessing_stages

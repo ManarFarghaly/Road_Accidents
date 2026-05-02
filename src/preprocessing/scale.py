@@ -62,10 +62,7 @@ def build_scaling_stages_for_lr():
 
 
 def build_scaling_stages_for_trees():
-    tree_numeric_cols = [
-        c for c in NUMERIC_COLS
-        if c not in TARGET_ENCODE_OUT_COLS   # trees use StringIndexer, not _te floats
-    ]
+    tree_numeric_cols = NUMERIC_COLS
     pre_assembler = VectorAssembler(
         inputCols=tree_numeric_cols, outputCol="numeric_scaled",
         handleInvalid="keep"

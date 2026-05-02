@@ -157,14 +157,13 @@ def build_encoding_stages_trees():
     No OHE — trees split on integer values natively.
     TARGET_ENCODE_COLS are excluded: they will be float columns by the
     time the pipeline runs (added to NUMERIC_COLS in scale.py).
-    HIGH_CARD_CATS_LR_TARGET columns are also excluded here because
-    for trees we DO include them as StringIndexer.
     """
     stages = []
     encoded_output_cols = []
 
-    # Trees CAN use model and LSOA as integer indices — add them back
-    all_cats = LOW_CARD_CATS + HIGH_CARD_CATS + TARGET_ENCODE_COLS + ORDINAL_CATS
+    # Trees CAN use model and LSOA as numeric target-encoded features,
+    # so we exclude the raw string columns from the tree indexer.
+    all_cats = LOW_CARD_CATS + HIGH_CARD_CATS + ORDINAL_CATS
 
     for c in all_cats:
         idx_col = f"{c}_idx"
