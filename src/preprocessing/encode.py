@@ -28,8 +28,8 @@ LOW_CARD_CATS = [
     "Journey_Purpose_of_Driver",                # 8
     "Junction_Location",                        # 10
     "Propulsion_Code",             # 13
-    "Towing_and_Articulation" #7,
-    "Vehicle_Leaving_Carriageway" # 10,
+    "Towing_and_Articulation", #7,
+    "Vehicle_Leaving_Carriageway", # 10,
     "X1st_Point_of_Impact"  # 6
     ]
 
@@ -45,10 +45,10 @@ HIGH_CARD_CATS = [
     "Local_Authority_(District)",  # ~400
     "Local_Authority_(Highway)",   # 207
     "Police_Force",                # ~50
-    "Veicle_Manoeuvre" # 19
+    "Vehicle_Manoeuvre" # 19
 ]
 
-LABEL_COL = ["Accident_Severity"]
+LABEL_COL = "Accident_Severity"
 
 def build_encoding_stages_trees():
     stages = []
@@ -70,8 +70,7 @@ def build_encoding_stages_trees():
     return stages, encoded_output_cols
 
 
-def build_encoding_stages_lr(num_features: int = 8192): # Increased num_features
-    stages = []
+def build_encoding_stages_lr(num_features: int = 8192): 
     encoded_output_cols = []
     
     # 1. Nominal Low Card -> OneHot

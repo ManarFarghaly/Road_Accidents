@@ -50,11 +50,11 @@ from pyspark.sql import SparkSession
 spark = SparkSession.builder.getOrCreate()
 
 # Read the parquet file
-df = spark.read.parquet(r"E:\Data\BigData\Project\Road_Accidents\data\interim\station_weather.parquet")
+df = spark.read.parquet(r"E:\Data\BigData\Project\Road_Accidents\data\processed\train.parquet")
 
 # Show first 10 columns
-cols10 = df.columns[:50]
-df.select(cols10).show(50, truncate=False)   # show first 5 rows of those columns
+cols10 = df.columns[:10]
+df.select(cols10).show(10, truncate=False)   # show first 10 rows of those columns
 
 # Get summary statistics for those columns
 df.select(cols10).describe().show()
