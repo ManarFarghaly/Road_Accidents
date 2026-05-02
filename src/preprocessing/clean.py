@@ -65,6 +65,8 @@ NUM_IMPUTE_COLS = [
     "Driver_IMD_Decile",     # 34 % missing
     "Location_Easting_OSGR",
     "Location_Northing_OSGR",
+    "Was_Vehicle_Left_Hand_Drive",
+    "InScotland" ,
     # Weather — MCAR
     "tmin", "tmax", "pres", "temp", "rhum", "wspd",
 ]
@@ -75,11 +77,10 @@ MODE_IMPUTE_COLS = [
     "Light_Conditions",
     "Road_Surface_Conditions",
     "Sex_of_Driver",
-    "Was_Vehicle_Left_Hand_Drive",
     "Propulsion_Code",
     "Towing_and_Articulation",
     "Age_Band_of_Driver",
-    "InScotland" 
+   
 ]
 
 GROUP_MODE_IMPUTE = [
@@ -188,6 +189,12 @@ def _build_select_exprs(df: DataFrame) -> list:
             c = (F.when(c == "Yes", 1.0)
                   .when(c == "No",  0.0)
                   .otherwise(None))
+            exprs.append(c.alias(out_name))
+            continue
+        if out_name == "Was_Vehicle_Left_Hand_Drive":
+            c = (F.when(c.isin("2", "Yes", "yes"), 1.0)
+                  .when(c.isin("1", "No",  "no"),  0.0)
+                  .otherwise(None))          # Imputer will fill median (0.0)
             exprs.append(c.alias(out_name))
             continue
 
