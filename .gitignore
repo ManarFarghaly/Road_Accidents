@@ -27,6 +27,7 @@ derby.log
 
 # virtualenv
 road_env/
+big_data_venv/
 
 # winutils binaries (downloaded locally by scripts/get_winutils.py)
 winutils/bin/*.exe
