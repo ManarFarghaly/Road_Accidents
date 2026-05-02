@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-04-23T19:12:32.884395",
+  "generated_at": "2026-05-02T05:35:17.191499",
   "dimensions": {
     "accuracy": {
       "invalid_severity_values": 0,
@@ -129,12 +129,9 @@
       }
     },
     "uniqueness": {
-      "accidents_exact_duplicates": 0,
-      "accidents_key_duplicates": 0,
-      "vehicles_exact_duplicates": 0,
-      "vehicles_duplicate_accident_index": 688224,
-      "vehicles_duplicate_accident_index_note": "Duplicate Accident_Index values in the vehicles table are EXPECTED by design \u2014 multiple vehicles can be involved in one accident.",
-      "vehicles_composite_key_duplicates": 0
+      "total_exact_duplicates": 0,
+      "composite_key_duplicates": 0,
+      "duplicate_accident_indices": 668684
     },
     "outliers": {
       "iqr": {
@@ -194,6 +191,28 @@
     },
     "distribution": {
       "descriptive_stats": {
+        "accidents.Latitude": {
+          "min": 49.913,
+          "max": 60.758,
+          "mean": 52.56,
+          "median": 52.238,
+          "std": 1.446,
+          "skewness": 1.03,
+          "kurtosis": 0.828,
+          "n_valid": 2047082,
+          "cardinality": 1319367
+        },
+        "accidents.Longitude": {
+          "min": -7.516,
+          "max": 1.762,
+          "mean": -1.41,
+          "median": -1.362,
+          "std": 1.404,
+          "skewness": -0.393,
+          "kurtosis": -0.349,
+          "n_valid": 2047081,
+          "cardinality": 1417728
+        },
         "accidents.Speed_limit": {
           "min": 0.0,
           "max": 70.0,
@@ -227,28 +246,6 @@
           "n_valid": 2047256,
           "cardinality": 29
         },
-        "accidents.Latitude": {
-          "min": 49.913,
-          "max": 60.758,
-          "mean": 52.56,
-          "median": 52.238,
-          "std": 1.446,
-          "skewness": 1.03,
-          "kurtosis": 0.828,
-          "n_valid": 2047082,
-          "cardinality": 1319367
-        },
-        "accidents.Longitude": {
-          "min": -7.516,
-          "max": 1.762,
-          "mean": -1.41,
-          "median": -1.362,
-          "std": 1.404,
-          "skewness": -0.393,
-          "kurtosis": -0.349,
-          "n_valid": 2047081,
-          "cardinality": 1417728
-        },
         "vehicles.Age_of_Vehicle": {
           "min": 1.0,
           "max": 111.0,
@@ -260,19 +257,99 @@
           "n_valid": 1819056,
           "cardinality": 88
         },
-        "vehicles.Engine_Capacity_.CC.": {
+        "vehicles.Driver_IMD_Decile": {
           "min": 1.0,
-          "max": 96000.0,
-          "mean": 2042.234,
-          "median": 1598.0,
-          "std": 1950.143,
-          "skewness": 5.537,
-          "kurtosis": 97.023,
-          "n_valid": 1911344,
-          "cardinality": 2556
+          "max": 10.0,
+          "mean": 5.388,
+          "median": 5.0,
+          "std": 2.822,
+          "skewness": 0.048,
+          "kurtosis": -1.19,
+          "n_valid": 1442393,
+          "cardinality": 10
         }
       },
       "histograms": {
+        "accidents.Latitude": {
+          "n_bins": 10,
+          "bin_edges": [
+            49.913,
+            50.997,
+            52.082,
+            53.166,
+            54.251,
+            55.335,
+            56.42,
+            57.504,
+            58.589,
+            59.673,
+            60.758
+          ],
+          "bin_counts": [
+            175171,
+            809444,
+            405212,
+            424012,
+            102546,
+            102828,
+            20906,
+            6073,
+            492,
+            398
+          ],
+          "histogram_pct": [
+            8.6,
+            39.5,
+            19.8,
+            20.7,
+            5.0,
+            5.0,
+            1.0,
+            0.3,
+            0.0,
+            0.0
+          ]
+        },
+        "accidents.Longitude": {
+          "n_bins": 10,
+          "bin_edges": [
+            -7.516,
+            -6.588,
+            -5.661,
+            -4.733,
+            -3.805,
+            -2.877,
+            -1.949,
+            -1.021,
+            -0.094,
+            0.834,
+            1.762
+          ],
+          "bin_counts": [
+            225,
+            1071,
+            23534,
+            108905,
+            204273,
+            356689,
+            503647,
+            484383,
+            296607,
+            67747
+          ],
+          "histogram_pct": [
+            0.0,
+            0.1,
+            1.1,
+            5.3,
+            10.0,
+            17.4,
+            24.6,
+            23.7,
+            14.5,
+            3.3
+          ]
+        },
         "accidents.Speed_limit": {
           "n_bins": 10,
           "bin_edges": [
@@ -393,86 +470,6 @@
             0.0
           ]
         },
-        "accidents.Latitude": {
-          "n_bins": 10,
-          "bin_edges": [
-            49.913,
-            50.997,
-            52.082,
-            53.166,
-            54.251,
-            55.335,
-            56.42,
-            57.504,
-            58.589,
-            59.673,
-            60.758
-          ],
-          "bin_counts": [
-            175171,
-            809444,
-            405212,
-            424012,
-            102546,
-            102828,
-            20906,
-            6073,
-            492,
-            398
-          ],
-          "histogram_pct": [
-            8.6,
-            39.5,
-            19.8,
-            20.7,
-            5.0,
-            5.0,
-            1.0,
-            0.3,
-            0.0,
-            0.0
-          ]
-        },
-        "accidents.Longitude": {
-          "n_bins": 10,
-          "bin_edges": [
-            -7.516,
-            -6.588,
-            -5.661,
-            -4.733,
-            -3.805,
-            -2.877,
-            -1.949,
-            -1.021,
-            -0.094,
-            0.834,
-            1.762
-          ],
-          "bin_counts": [
-            225,
-            1071,
-            23534,
-            108905,
-            204273,
-            356689,
-            503647,
-            484383,
-            296607,
-            67747
-          ],
-          "histogram_pct": [
-            0.0,
-            0.1,
-            1.1,
-            5.3,
-            10.0,
-            17.4,
-            24.6,
-            23.7,
-            14.5,
-            3.3
-          ]
-        },
         "vehicles.Age_of_Vehicle": {
           "n_bins": 10,
           "bin_edges": [
@@ -513,48 +510,58 @@
             0.0
           ]
         },
-        "vehicles.Engine_Capacity_.CC.": {
+        "vehicles.Driver_IMD_Decile": {
           "n_bins": 10,
           "bin_edges": [
             1.0,
-            9600.9,
-            19200.8,
-            28800.7,
-            38400.6,
-            48000.5,
-            57600.4,
-            67200.3,
-            76800.2,
-            86400.1,
-            96000.0
+            1.9,
+            2.8,
+            3.7,
+            4.6,
+            5.5,
+            6.4,
+            7.3,
+            8.2,
+            9.1,
+            10.0
           ],
           "bin_counts": [
-            1873104,
-            38124,
-            35,
-            16,
-            4,
-            8,
-            12,
-            6,
-            15,
-            20
+            141939,
+            151065,
+            151377,
+            151068,
+            150367,
+            149351,
+            144579,
+            140578,
+            136802,
+            125267
           ],
           "histogram_pct": [
-            98.0,
-            2.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0
+            9.8,
+            10.5,
+            10.5,
+            10.5,
+            10.4,
+            10.4,
+            10.0,
+            9.7,
+            9.5,
+            8.7
           ]
         }
       },
       "ks_test_vs_normal": {
+        "accidents.Latitude": {
+          "ks_statistic": 0.1305,
+          "p_value": 0.0,
+          "interpretation": "NOT normally distributed (p < 0.05) \u2014 use Spearman for correlations"
+        },
+        "accidents.Longitude": {
+          "ks_statistic": 0.0882,
+          "p_value": 0.0,
+          "interpretation": "NOT normally distributed (p < 0.05) \u2014 use Spearman for correlations"
+        },
         "accidents.Speed_limit": {
           "ks_statistic": 0.3998,
           "p_value": 0.0,
@@ -570,23 +577,13 @@
           "p_value": 0.0,
           "interpretation": "NOT normally distributed (p < 0.05) \u2014 use Spearman for correlations"
         },
-        "accidents.Latitude": {
-          "ks_statistic": 0.1305,
-          "p_value": 0.0,
-          "interpretation": "NOT normally distributed (p < 0.05) \u2014 use Spearman for correlations"
-        },
-        "accidents.Longitude": {
-          "ks_statistic": 0.0882,
-          "p_value": 0.0,
-          "interpretation": "NOT normally distributed (p < 0.05) \u2014 use Spearman for correlations"
-        },
         "vehicles.Age_of_Vehicle": {
           "ks_statistic": 0.0996,
           "p_value": 0.0,
           "interpretation": "NOT normally distributed (p < 0.05) \u2014 use Spearman for correlations"
         },
-        "vehicles.Engine_Capacity_.CC.": {
-          "ks_statistic": 0.3101,
+        "vehicles.Driver_IMD_Decile": {
+          "ks_statistic": 0.1064,
           "p_value": 0.0,
           "interpretation": "NOT normally distributed (p < 0.05) \u2014 use Spearman for correlations"
         }
@@ -714,6 +711,583 @@
           "Waiting to turn left": 12497,
           "Overtaking - nearside": 11269,
           "Data missing or out of range": 1368
+        }
+      }
+    },
+    "weather_distribution": {
+      "stats": {
+        "temp": {
+          "missing_pct": 48.79,
+          "min": -13.2,
+          "max": 27.9,
+          "mean": 10.661,
+          "median": 10.9,
+          "std": 5.25,
+          "skewness": -0.166,
+          "kurtosis": -0.495,
+          "n_valid": 1390760
+        },
+        "tmin": {
+          "missing_pct": 56.79,
+          "min": -24.2,
+          "max": 26.1,
+          "mean": 7.121,
+          "median": 7.4,
+          "std": 5.197,
+          "skewness": -0.244,
+          "kurtosis": -0.513,
+          "n_valid": 1173519
+        },
+        "tmax": {
+          "missing_pct": 56.71,
+          "min": -8.0,
+          "max": 36.7,
+          "mean": 14.217,
+          "median": 14.1,
+          "std": 5.877,
+          "skewness": 0.044,
+          "kurtosis": -0.401,
+          "n_valid": 1175710
+        },
+        "prcp": {
+          "missing_pct": 94.5,
+          "min": 0.0,
+          "max": 221.5,
+          "mean": 2.008,
+          "median": 0.3,
+          "std": 4.436,
+          "skewness": 6.483,
+          "kurtosis": 147.834,
+          "n_valid": 149484
+        },
+        "snwd": {
+          "missing_pct": 98.71,
+          "min": 0.0,
+          "max": 133.0,
+          "mean": 0.615,
+          "median": 0.0,
+          "std": 6.746,
+          "skewness": 17.122,
+          "kurtosis": 306.896,
+          "n_valid": 34983
+        },
+        "wspd": {
+          "missing_pct": 51.69,
+          "min": 0.0,
+          "max": 90.9,
+          "mean": 15.541,
+          "median": 14.4,
+          "std": 7.25,
+          "skewness": 1.243,
+          "kurtosis": 3.824,
+          "n_valid": 1312026
+        },
+        "pres": {
+          "missing_pct": 73.87,
+          "min": 955.2,
+          "max": 1044.2,
+          "mean": 1014.841,
+          "median": 1015.7,
+          "std": 10.777,
+          "skewness": -0.46,
+          "kurtosis": 0.433,
+          "n_valid": 709587
+        },
+        "rhum": {
+          "missing_pct": 49.41,
+          "min": 4.0,
+          "max": 100.0,
+          "mean": 79.988,
+          "median": 81.0,
+          "std": 9.815,
+          "skewness": -0.436,
+          "kurtosis": -0.104,
+          "n_valid": 1373865
+        },
+        "cldc": {
+          "missing_pct": 85.59,
+          "min": 0.0,
+          "max": 8.0,
+          "mean": 5.088,
+          "median": 5.0,
+          "std": 1.799,
+          "skewness": -0.713,
+          "kurtosis": 0.232,
+          "n_valid": 391449
+        }
+      },
+      "histograms": {
+        "temp": {
+          "n_bins": 10,
+          "bin_edges": [
+            -13.2,
+            -9.09,
+            -4.98,
+            -0.87,
+            3.24,
+            7.35,
+            11.46,
+            15.57,
+            19.68,
+            23.79,
+            27.9
+          ],
+          "bin_counts": [
+            152,
+            904,
+            13999,
+            113350,
+            260672,
+            351669,
+            383705,
+            226063,
+            36972,
+            3274
+          ],
+          "histogram_pct": [
+            0.0,
+            0.1,
+            1.0,
+            8.2,
+            18.7,
+            25.3,
+            27.6,
+            16.3,
+            2.7,
+            0.2
+          ]
+        },
+        "tmin": {
+          "n_bins": 10,
+          "bin_edges": [
+            -24.2,
+            -19.17,
+            -14.14,
+            -9.11,
+            -4.08,
+            0.95,
+            5.98,
+            11.01,
+            16.04,
+            21.07,
+            26.1
+          ],
+          "bin_counts": [
+            15,
+            79,
+            879,
+            14275,
+            137593,
+            307622,
+            422566,
+            268183,
+            22117,
+            190
+          ],
+          "histogram_pct": [
+            0.0,
+            0.0,
+            0.1,
+            1.2,
+            11.7,
+            26.2,
+            36.0,
+            22.9,
+            1.9,
+            0.0
+          ]
+        },
+        "tmax": {
+          "n_bins": 10,
+          "bin_edges": [
+            -8.0,
+            -3.53,
+            0.94,
+            5.41,
+            9.88,
+            14.35,
+            18.82,
+            23.29,
+            27.76,
+            32.23,
+            36.7
+          ],
+          "bin_counts": [
+            252,
+            5819,
+            75094,
+            201948,
+            314318,
+            299756,
+            211476,
+            54974,
+            11470,
+            603
+          ],
+          "histogram_pct": [
+            0.0,
+            0.5,
+            6.4,
+            17.2,
+            26.7,
+            25.5,
+            18.0,
+            4.7,
+            1.0,
+            0.1
+          ]
+        },
+        "prcp": {
+          "n_bins": 10,
+          "bin_edges": [
+            0.0,
+            22.15,
+            44.3,
+            66.45,
+            88.6,
+            110.75,
+            132.9,
+            155.05,
+            177.2,
+            199.35,
+            221.5
+          ],
+          "bin_counts": [
+            148338,
+            1050,
+            78,
+            15,
+            0,
+            0,
+            0,
+            0,
+            0,
+            3
+          ],
+          "histogram_pct": [
+            99.2,
+            0.7,
+            0.1,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "snwd": {
+          "n_bins": 10,
+          "bin_edges": [
+            0.0,
+            13.3,
+            26.6,
+            39.9,
+            53.2,
+            66.5,
+            79.8,
+            93.1,
+            106.4,
+            119.7,
+            133.0
+          ],
+          "bin_counts": [
+            34789,
+            74,
+            0,
+            0,
+            12,
+            8,
+            15,
+            5,
+            23,
+            57
+          ],
+          "histogram_pct": [
+            99.4,
+            0.2,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.1,
+            0.2
+          ]
+        },
+        "wspd": {
+          "n_bins": 10,
+          "bin_edges": [
+            0.0,
+            9.09,
+            18.18,
+            27.27,
+            36.36,
+            45.45,
+            54.54,
+            63.63,
+            72.72,
+            81.81,
+            90.9
+          ],
+          "bin_counts": [
+            222243,
+            696070,
+            307303,
+            70111,
+            12311,
+            2685,
+            676,
+            341,
+            198,
+            88
+          ],
+          "histogram_pct": [
+            16.9,
+            53.1,
+            23.4,
+            5.3,
+            0.9,
+            0.2,
+            0.1,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "pres": {
+          "n_bins": 10,
+          "bin_edges": [
+            955.2,
+            964.1,
+            973.0,
+            981.9,
+            990.8,
+            999.7,
+            1008.6,
+            1017.5,
+            1026.4,
+            1035.3,
+            1044.2
+          ],
+          "bin_counts": [
+            13,
+            439,
+            2643,
+            14660,
+            45697,
+            113763,
+            227890,
+            213322,
+            77405,
+            13755
+          ],
+          "histogram_pct": [
+            0.0,
+            0.1,
+            0.4,
+            2.1,
+            6.4,
+            16.0,
+            32.1,
+            30.1,
+            10.9,
+            1.9
+          ]
+        },
+        "rhum": {
+          "n_bins": 10,
+          "bin_edges": [
+            4.0,
+            13.6,
+            23.2,
+            32.8,
+            42.4,
+            52.0,
+            61.6,
+            71.2,
+            80.8,
+            90.4,
+            100.0
+          ],
+          "bin_counts": [
+            4,
+            0,
+            0,
+            200,
+            5274,
+            50840,
+            212181,
+            402660,
+            510567,
+            192139
+          ],
+          "histogram_pct": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.4,
+            3.7,
+            15.4,
+            29.3,
+            37.2,
+            14.0
+          ]
+        },
+        "cldc": {
+          "n_bins": 10,
+          "bin_edges": [
+            0.0,
+            0.8,
+            1.6,
+            2.4,
+            3.2,
+            4.0,
+            4.8,
+            5.6,
+            6.4,
+            7.2,
+            8.0
+          ],
+          "bin_counts": [
+            9133,
+            8549,
+            18176,
+            29460,
+            0,
+            68104,
+            71745,
+            96445,
+            69912,
+            19925
+          ],
+          "histogram_pct": [
+            2.3,
+            2.2,
+            4.6,
+            7.5,
+            0.0,
+            17.4,
+            18.3,
+            24.6,
+            17.9,
+            5.1
+          ]
+        }
+      },
+      "ks_tests": {
+        "temp": {
+          "ks_statistic": 0.0464,
+          "p_value": 0.0,
+          "interpretation": "NOT normal (p<0.05) \u2014 use Spearman"
+        },
+        "tmin": {
+          "ks_statistic": 0.0585,
+          "p_value": 0.0,
+          "interpretation": "NOT normal (p<0.05) \u2014 use Spearman"
+        },
+        "tmax": {
+          "ks_statistic": 0.046,
+          "p_value": 0.0,
+          "interpretation": "NOT normal (p<0.05) \u2014 use Spearman"
+        },
+        "prcp": {
+          "ks_statistic": 0.3245,
+          "p_value": 0.0,
+          "interpretation": "NOT normal (p<0.05) \u2014 use Spearman"
+        },
+        "snwd": {
+          "ks_statistic": 0.4684,
+          "p_value": 0.0,
+          "interpretation": "NOT normal (p<0.05) \u2014 use Spearman"
+        },
+        "wspd": {
+          "ks_statistic": 0.0735,
+          "p_value": 0.0,
+          "interpretation": "NOT normal (p<0.05) \u2014 use Spearman"
+        },
+        "pres": {
+          "ks_statistic": 0.0416,
+          "p_value": 0.0,
+          "interpretation": "NOT normal (p<0.05) \u2014 use Spearman"
+        },
+        "rhum": {
+          "ks_statistic": 0.0652,
+          "p_value": 0.0,
+          "interpretation": "NOT normal (p<0.05) \u2014 use Spearman"
+        },
+        "cldc": {
+          "ks_statistic": 0.1647,
+          "p_value": 0.0,
+          "interpretation": "NOT normal (p<0.05) \u2014 use Spearman"
+        }
+      },
+      "bounds_violations": {
+        "temp": {
+          "count": 0,
+          "bounds": [
+            -30,
+            50
+          ]
+        },
+        "tmin": {
+          "count": 0,
+          "bounds": [
+            -30,
+            45
+          ]
+        },
+        "tmax": {
+          "count": 0,
+          "bounds": [
+            -25,
+            50
+          ]
+        },
+        "prcp": {
+          "count": 0,
+          "bounds": [
+            0,
+            10000
+          ]
+        },
+        "snwd": {
+          "count": 0,
+          "bounds": [
+            0,
+            2000
+          ]
+        },
+        "wspd": {
+          "count": 0,
+          "bounds": [
+            0,
+            114
+          ]
+        },
+        "pres": {
+          "count": 0,
+          "bounds": [
+            870,
+            1085
+          ]
+        },
+        "rhum": {
+          "count": 0,
+          "bounds": [
+            0,
+            100
+          ]
+        },
+        "cldc": {
+          "count": 0,
+          "bounds": [
+            0,
+            9
+          ]
         }
       }
     },
@@ -867,43 +1441,59 @@
       },
       {
         "dimension": "completeness",
-        "message": "[ACCIDENTS] Required column 'Latitude' has 174 null values (0.0%)"
+        "message": "[ACCIDENTS] CRITICAL: 'Latitude' has 174 nulls (0.01%). These rows must be dropped."
       },
       {
         "dimension": "completeness",
-        "message": "[ACCIDENTS] Required column 'Longitude' has 175 null values (0.0%)"
+        "message": "[ACCIDENTS] CRITICAL: 'Longitude' has 175 nulls (0.01%). These rows must be dropped."
       },
       {
         "dimension": "completeness",
-        "message": "[ACCIDENTS] Required column 'Speed_limit' has 37 null values (0.0%)"
+        "message": "[ACCIDENTS] CRITICAL: 'Time' has 156 nulls (0.01%). These rows must be dropped."
       },
       {
-        "dimension": "completeness",
-        "message": "[ACCIDENTS] 'Carriageway_Hazards' is 98.1% missing (>20.0% threshold)"
+        "dimension": "weather_distribution",
+        "message": "[WEATHER] 'temp' is 48.8% missing (>20.0% threshold)"
       },
       {
-        "dimension": "completeness",
-        "message": "[ACCIDENTS] 'Special_Conditions_at_Site' is 97.5% missing (>20.0% threshold)"
+        "dimension": "weather_distribution",
+        "message": "[WEATHER] 'tmin' is 56.8% missing (>20.0% threshold)"
       },
       {
-        "dimension": "completeness",
-        "message": "[ACCIDENTS] '2nd_Road_Class' is 41.2% missing (>20.0% threshold)"
+        "dimension": "weather_distribution",
+        "message": "[WEATHER] 'tmax' is 56.7% missing (>20.0% threshold)"
       },
       {
-        "dimension": "completeness",
-        "message": "[VEHICLES] 'Hit_Object_in_Carriageway' is 95.9% missing (>20.0% threshold)"
+        "dimension": "weather_distribution",
+        "message": "[WEATHER] 'prcp' is 94.5% missing (>20.0% threshold)"
       },
       {
-        "dimension": "completeness",
-        "message": "[VEHICLES] 'Hit_Object_off_Carriageway' is 91.4% missing (>20.0% threshold)"
+        "dimension": "weather_distribution",
+        "message": "[WEATHER] 'snwd' is 98.7% missing (>20.0% threshold)"
       },
       {
-        "dimension": "completeness",
-        "message": "[VEHICLES] 'Skidding_and_Overturning' is 87.2% missing (>20.0% threshold)"
+        "dimension": "weather_distribution",
+        "message": "[WEATHER] 'wspd' is 51.7% missing (>20.0% threshold)"
       },
       {
-        "dimension": "completeness",
-        "message": "[VEHICLES] 'Driver_IMD_Decile' is 33.8% missing (>20.0% threshold)"
+        "dimension": "weather_distribution",
+        "message": "[WEATHER] 'pres' is 73.9% missing (>20.0% threshold)"
+      },
+      {
+        "dimension": "weather_distribution",
+        "message": "[WEATHER] 'rhum' is 49.4% missing (>20.0% threshold)"
+      },
+      {
+        "dimension": "weather_distribution",
+        "message": "[WEATHER] 'wpgt' is 100.0% missing (>20.0% threshold)"
+      },
+      {
+        "dimension": "weather_distribution",
+        "message": "[WEATHER] 'tsun' is 100.0% missing (>20.0% threshold)"
+      },
+      {
+        "dimension": "weather_distribution",
+        "message": "[WEATHER] 'cldc' is 85.6% missing (>20.0% threshold)"
       },
       {
         "dimension": "join_integrity",
@@ -914,6 +1504,6 @@
         "message": "99,257 vehicle records (6.7%) have no matching accident \u2014 orphaned records, dropped on inner join"
       }
     ],
-    "total_issue_count": 14
+    "total_issue_count": 18
   }
 }

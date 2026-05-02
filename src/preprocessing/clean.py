@@ -1,54 +1,15 @@
-"""
-Data Cleaning.
-
-Eager cleaning function that runs on the raw merged DataFrame *before*
-the Spark ML Pipeline is built. Addresses every finding from the
-8-dimension validation report.
-
-Order of operations (each step is idempotent and commented with its
-MCAR/MAR/MNAR justification where relevant):
-
-    a   Drop 6 noise cols (>85 % missing OR 81 %-dominated by "Unclassified")
-    a'  Drop target-leakage cols (Number_of_Casualties — STATS19 defines
-        severity FROM casualty counts; also unavailable at prediction time)
-    b   Null out UK DfT sentinel strings ("Data missing or out of range", etc.)
-    c   Null out numeric -1 "unknown" codes
-    d   Snap Speed_limit outliers to the nearest UK legal limit
-    e   Enforce validity bounds (Lat/Lon UK box, Engine_Capacity 50-8000cc,
-        Age_of_Vehicle 0-100, Number_of_Vehicles ≥1) — real DATA ERRORS → NULL
-    e'  Drop rows missing required fields (Severity target + Lat/Lon)
-    g   Median-impute remaining numeric NULLs (MAR, robust to skew)
-    h   Mode-by-group impute for `model` (model depends on make)
-    i   "Unknown" fill for remaining cats (MAR / MNAR — own level)
-
-STATISTICAL OUTLIERS (IQR flagged 47 k in Number_of_Vehicles) are kept as-is.
-They are legitimate (a coach crash really can have 30 casualties), tree models
-(RF/GBT) are outlier-robust, and StandardScaler re-centers LR inputs. Note the
-distinction vs step e above: "data error" = physically/legally impossible
-value (null out); "outlier" = extreme-but-real observation (keep).
-
-CLASS IMBALANCE is documented here but NOT handled in this module. The target
-distribution is roughly Slight 85 % / Serious 14 % / Fatal 1 %. Fatal is
-60× rarer than Slight — the model will learn "predict Slight" and score 85 %
-accuracy while being useless. Remedies (pick one, Member 3's decision):
-   • classWeightCol in LR/GBT   ← cheapest, no data duplication
-   • random undersampling of the majority class (see `rebalance_undersample`)
-   • SMOTE-style oversampling (Spark doesn't ship it; imblearn on sampled df)
-We provide `rebalance_undersample()` as an optional helper; use it only on
-the TRAINING split, never on test — resampling the test set gives wrong
-performance numbers.
-"""
 from __future__ import annotations
+
+from functools import reduce
 
 from pyspark.sql import DataFrame, Window, functions as F
 from pyspark.ml.feature import Imputer
 
 
-# ─── a. columns with so much missing/garbage they carry no signal ─────────
-# First five are MNAR (only populated for specific accident types) at >85 %
-# missing. 2nd_Road_Class looks different but resolves the same way:
-# 41 % NA  + 40 % "Unclassified" = 81 % uninformative — the remaining 19 %
-# spread across six classes carries too little signal to justify a column.
+# 
+# Column lists
+# 
+
 HIGH_MISSING_COLS = [
     "Carriageway_Hazards",            # 98.07 %
     "Special_Conditions_at_Site",     # 97.45 %
@@ -56,160 +17,100 @@ HIGH_MISSING_COLS = [
     "Hit_Object_off_Carriageway",     # 91.39 %
     "Skidding_and_Overturning",       # 87.19 %
     "2nd_Road_Class",                 # 41 % NA + 40 % "Unclassified" = 81 % noise
+    "wpgt", "prcp", "snwd", "tsun", "cldc",
 ]
 
-# ─── a'. target-leakage columns — drop before training ────────────────────
-# UK STATS19 defines Accident_Severity DIRECTLY from casualty counts:
-#     Fatal   = at least one fatal casualty
-#     Serious = at least one serious injury
-#     Slight  = only slight injuries
-# So Number_of_Casualties is essentially the target written in another
-# column — a model using it achieves near-perfect accuracy by cheating.
-# It is also NOT KNOWN AT PREDICTION TIME (a traffic-safety app predicts
-# severity BEFORE the accident happens), which is what your mentor
-# flagged. Dropping it is mandatory, not a judgement call.
 LEAKAGE_COLS = [
     "Number_of_Casualties",
+    "Did_Police_Officer_Attend_Scene_of_Accident",
 ]
 
-# ─── b. UK DfT sentinel string values meaning "missing" ──────────────────
-# Note we do NOT include "Not known" here — that is a legitimate category
-# for Sex_of_Driver (76 k rows) and carries information (foreign/uninsured
-# drivers tend to cluster in certain severity patterns).
 SENTINEL_STRINGS = [
     "Data missing or out of range",
-    "Unknown",
-    "unknown",
-    "N/A",
-    "",
+    "Unknown", "unknown",
+    "Null", "NULL", "[null]", "null",
 ]
 
-# ─── d. valid UK legal speed limits (mph) ────────────────────────────────
-# Used to snap the 36 invalid Speed_limit values (e.g. 10, 15, 999) to the
-# nearest legal limit. Cheaper than dropping the rows, and most invalid
-# values are typos within 5 mph of a legal limit.
+VALID_AGE_BANDS = [
+    "0 - 5", "6 - 10", "11 - 15", "16 - 20", "21 - 25",
+    "26 - 35", "36 - 45", "46 - 55", "56 - 65", "66 - 75", "Over 75",
+]
+
 UK_LEGAL_SPEED_LIMITS = [20, 30, 40, 50, 60, 70]
 
-# ─── e. required columns — rows missing any of these are dropped ─────────
 REQUIRED_COLS = [
-    "Accident_Severity",   # target — null target is useless for supervised learning
-    "Latitude",            # needed for features + already used for station join
-    "Longitude",           # same
+    "Accident_Severity", "Latitude", "Longitude",
+    "Accident_Index", "Speed_limit","Time", "Date",
 ]
 
-# ─── f. validity bounds — real data errors, not statistical outliers ─────
-# These are physically/legally impossible values (not extreme-but-real
-# observations like a 30-casualty coach crash). We NULL them out here so
-# the imputer replaces them with the median; leaving them distorts means
-# and scalers.
-#
-#   Latitude/Longitude : UK geographic bounds
-#   Engine_Capacity    : 50 cc (moped) … 8 000 cc (heavy truck)
-#   Age_of_Vehicle     : 0 … 100 years
-#   Number_of_Vehicles : 1 (must be ≥1) … 100 (safe upper bound)
-#
-# Note: this is orthogonal to statistical-outlier handling. Skewed-but-
-# legitimate values (IQR-flagged large casualty counts, rare high engine
-# capacities) are preserved — they carry real signal about severe events.
 VALIDITY_BOUNDS = {
-    "Latitude":             (49.0, 61.0),
-    "Longitude":            (-8.0, 2.0),
+    "Latitude":           (49.0, 61.0),
+    "Longitude":          (-8.0, 2.0),
     "Engine_Capacity_CC": (50.0, 8000.0),
-    "Age_of_Vehicle":       (0.0, 100.0),
-    "Number_of_Vehicles":   (1.0, 100.0),
+    "Age_of_Vehicle":     (0.0, 100.0),
+    "Number_of_Vehicles": (1.0, 100.0),
 }
 
-# ─── g. numerics to median-impute ────────────────────────────────────────
-# MAR (Missing At Random) — probability of being missing can be predicted
-# by other features (e.g. Driver_IMD_Decile is systematically missing for
-# foreign postcodes), but the imputed value is stable at population scale.
-# Median is robust to the heavy right-skew (skew 2-8) flagged in validation.
+# Columns to cast to double (done in the single select pass)
+NUMERIC_CAST_COLS = [
+    "Speed_limit", "Number_of_Vehicles", "Latitude", "Longitude",
+    "Age_of_Vehicle", "Engine_Capacity_CC", "Driver_IMD_Decile",
+    "temp", "tmin", "tmax", "prcp", "snwd", "wspd", "pres",
+    "rhum", "wpgt", "tsun", "cldc",
+]
+
 NUM_IMPUTE_COLS = [
-    "Age_of_Vehicle",        # 16 %  missing — MAR (foreign / unregistered)
-    "Engine_Capacity_CC",  # 12 %  missing — MAR
-    "Driver_IMD_Decile",     # 34 %  missing — MAR (foreign postcodes) depends on driver location
-    # Weather features added in ingestion stage e. Nulls occur for
-    # (station_id, date) pairs where Meteostat had no observation — MCAR
-    # from the accidents' perspective (no selection bias).
-    "tavg",
-    "tmin",
-    "tmax",
-    "prcp",
-    "snow",
-    "wspd",
-    "pres",
+    "Age_of_Vehicle",        # 16 % missing
+    "Engine_Capacity_CC",    # 12 % missing
+    "Driver_IMD_Decile",     # 34 % missing
+    "Location_Easting_OSGR",
+    "Location_Northing_OSGR",
+    "Was_Vehicle_Left_Hand_Drive",
+    "InScotland" ,
+    # Weather — MCAR
+    "tmin", "tmax", "pres", "temp", "rhum", "wspd",
 ]
 
-# ─── h. group-wise mode imputation ───────────────────────────────────────
-# `model` is missing for 15 % of vehicles. Mode-over-all would collapse
-# half the fleet into "Ford Focus". Instead fill with the mode within
-# each `make` — more sensible (unknown Volkswagen → most common VW model).
-GROUP_MODE_IMPUTE = [
-    ("model", "make"),    # fill null model with mode(model) per make
-]
-
-# ─── i. remaining categoricals — "Unknown" fill ──────────────────────────
-# Pure MAR / low-MNAR where no structural meaning applies. StringIndexer
-# treats "Unknown" as its own level, preserving signal rather than dropping
-# rows. LSOA is high-cardinality so an "Unknown" level is cheap(negligable cost)
-CAT_IMPUTE_COLS = [
-    "LSOA_of_Accident_Location",
-    "Weather_Conditions",
-    "Road_Surface_Conditions",
-    "Light_Conditions",
-    "Junction_Detail",
-    "Junction_Control",
+MODE_IMPUTE_COLS = [
     "Road_Type",
-    "Vehicle_Type",
-    "make",
+    "Weather_Conditions",
+    "Light_Conditions",
+    "Road_Surface_Conditions",
+    "Sex_of_Driver",
+    "Propulsion_Code",
+    "Towing_and_Articulation",
+    "Age_Band_of_Driver",
+   
+]
+
+GROUP_MODE_IMPUTE = [
+    ("model", "make"),
+]
+
+CAT_IMPUTE_COLS = [
+    "1st_Road_Class", "Urban_or_Rural_Area",
+    "Pedestrian_Crossing-Human_Control",
+    "LSOA_of_Accident_Location",
+    "Junction_Detail", "Junction_Control",
+    "Road_Type", "Vehicle_Type", "make",
+    "Junction_Location", "Vehicle_Leaving_Carriageway",
+    "X1st_Point_of_Impact", "Journey_Purpose_of_Driver",
+    "Driver_Home_Area_Type", "Vehicle_Manoeuvre",
+    "2nd_Road_Number", "1st_Road_Number",
+    "Local_Authority_(District)", "Local_Authority_(Highway)", "Police_Force","Vehicle_Reference"
 ]
 
 LABEL_COL = "Accident_Severity"
 
 
-# ══════════════════════════════════════════════════════════════════════════
+# 
 # Helpers
-# ══════════════════════════════════════════════════════════════════════════
-def _snap_speed_limit(df: DataFrame) -> DataFrame:
-    """
-    UK speed limits are a fixed set: {20, 30, 40, 50, 60, 70}. The raw
-    data contains 36 rows with illegal values (e.g. 10, 15, 999). Snap
-    each to the nearest legal limit using a CASE expression built from
-    the midpoints between consecutive limits.
-
-    Midpoints: 25, 35, 45, 55, 65 → buckets [-∞, 25, 35, 45, 55, 65, ∞]
-    map to                                    20  30  40  50  60  70.
-    """
-    col = F.col("Speed_limit")
-    snapped = (
-        F.when(col <= 25, 20)
-         .when(col <= 35, 30)
-         .when(col <= 45, 40)
-         .when(col <= 55, 50)
-         .when(col <= 65, 60)
-         .otherwise(70)
-    )
-    # Only snap non-null values outside the legal set; leave legal values
-    # and nulls untouched (nulls flow to Imputer if present).
-    legal = col.isin(UK_LEGAL_SPEED_LIMITS)
-    return df.withColumn(
-        "Speed_limit",
-        F.when(col.isNull(), col)
-         .when(legal, col)
-         .otherwise(snapped),
-    )
-
+# 
 
 def _fill_mode_by_group(df: DataFrame, target: str, group: str) -> DataFrame:
-    """
-    Fill null values in `target` with the mode of `target` computed
-    within each `group`. Falls back to the global mode when a whole
-    group is null for `target`.
-    """
     if target not in df.columns or group not in df.columns:
         return df
 
-    # Mode per group
     grp_mode = (
         df.filter(F.col(target).isNotNull())
           .groupBy(group, target)
@@ -224,7 +125,6 @@ def _fill_mode_by_group(df: DataFrame, target: str, group: str) -> DataFrame:
           .select(group, F.col(target).alias(f"{target}_grp_mode"))
     )
 
-    # Global fallback mode
     global_mode_row = (
         df.filter(F.col(target).isNotNull())
           .groupBy(target).count()
@@ -233,180 +133,228 @@ def _fill_mode_by_group(df: DataFrame, target: str, group: str) -> DataFrame:
     )
     global_mode = global_mode_row[0] if global_mode_row else "Unknown"
 
-    out = (
-        df.join(grp_mode, on=group, how="left")
+    return (
+        df.join(F.broadcast(grp_mode), on=group, how="left")
           .withColumn(
               target,
-              F.coalesce(
-                  F.col(target),
-                  F.col(f"{target}_grp_mode"),
-                  F.lit(global_mode),
-              ),
+              F.coalesce(F.col(target), F.col(f"{target}_grp_mode"), F.lit(global_mode)),
           )
           .drop(f"{target}_grp_mode")
     )
-    return out
 
 
-# ══════════════════════════════════════════════════════════════════════════
-# Main entry point
-# ══════════════════════════════════════════════════════════════════════════
-def clean(df: DataFrame) -> DataFrame:
+def _build_select_exprs(df: DataFrame) -> list:
     """
-    Run the full cleaning pipeline on the raw merged DataFrame and
-    return the cleaned DataFrame. Called once by Member 3 before
-    constructing their Spark ML Pipeline.
+    Build ONE expression per column that combines ALL scalar transforms:
+      - rename Engine_Capacity_.CC. → Engine_Capacity_CC
+      - cast numerics to double
+      - null out sentinel strings
+      - null out negative sentinel (-1) for numerics
+      - snap Speed_limit to nearest legal value
+      - enforce validity bounds
+      - fix Day_of_Week from Date
+      - fix Age_Band_of_Driver
+      - normalise Sex_of_Driver
+      - cast InScotland → 0.0 / 1.0
+
+    Result: a single .select() call → ONE Project node in the query plan.
     """
-    # a ─ drop hopelessly-empty columns + target-leakage columns
-    to_drop = [
-        c for c in HIGH_MISSING_COLS + LEAKAGE_COLS
-        if c in df.columns
-    ]
-    if to_drop:
-        df = df.drop(*to_drop)
-    # ── Rename columns with special characters in their names ────────────
-    # Dots in column names cause AnalysisException throughout Spark ML.
-    # Rename once here so all downstream stages see clean names.
-    RENAME_COLS = {
-        "Engine_Capacity_.CC.": "Engine_Capacity_CC",
+    schema_map = {f.name: f.dataType.simpleString() for f in df.schema.fields}
+    exprs = []
+
+    # Columns to skip (dropped before this call, or renamed)
+    skip = set(HIGH_MISSING_COLS + LEAKAGE_COLS)
+
+    # Handle rename: Engine_Capacity_.CC. → Engine_Capacity_CC
+    rename_map = {"Engine_Capacity_.CC.": "Engine_Capacity_CC"
+    , "Vehicle_Location.Restricted_Lane": "Vehicle_Location_Restricted_Lane"
     }
-    for old, new in RENAME_COLS.items():
-        if old in df.columns:
-            df = df.withColumnRenamed(old, new)
-    # Cast known numeric columns to double early — avoids type errors downstream
-    NUMERIC_CAST_COLS = [
-        "Speed_limit", "Number_of_Vehicles", "Latitude", "Longitude",
-        "Age_of_Vehicle", "Engine_Capacity_CC", "Driver_IMD_Decile",
-        "tavg", "tmin", "tmax", "prcp", "snow", "wspd", "pres",
-    ]
-    for c in NUMERIC_CAST_COLS:
-        if c in df.columns:
-            safe_ref = f"`{c}`" if any(ch in c for ch in [".", "(", ")"]) else c
-            df = df.withColumn(c, F.col(safe_ref).cast("double"))
+   
 
-    # b ─ null out sentinel strings across every string column
-    str_cols = [
-        f.name for f in df.schema.fields
-        if f.dataType.simpleString() == "string"
-    ]
-    for c in str_cols:
-        safe = f"`{c}`"
-        df = df.withColumn(
-            c,
-            F.when(F.col(safe).isin(SENTINEL_STRINGS), None).otherwise(F.col(safe)),
+    for raw_name in df.columns:
+        if raw_name in skip:
+            continue
+
+        out_name = rename_map.get(raw_name, raw_name)
+        dtype    = schema_map.get(raw_name, "string")
+        c        = F.col(f"`{raw_name}`")   # backtick escapes dots/parens in col names
+
+        #  1. Cast to double for numeric columns ─
+        if out_name in NUMERIC_CAST_COLS:
+            c = c.cast("double")
+            dtype = "double"
+
+        #  2. InScotland → binary float 
+        if out_name == "InScotland":
+            c = (F.when(c == "Yes", 1.0)
+                  .when(c == "No",  0.0)
+                  .otherwise(None))
+            exprs.append(c.alias(out_name))
+            continue
+        if out_name == "Was_Vehicle_Left_Hand_Drive":
+            c = (F.when(c.isin("2", "Yes", "yes"), 1.0)
+                  .when(c.isin("1", "No",  "no"),  0.0)
+                  .otherwise(None))          # Imputer will fill median (0.0)
+            exprs.append(c.alias(out_name))
+            continue
+
+        #  3. Null sentinel strings 
+        if dtype == "string":
+            c = F.when(c.isin(SENTINEL_STRINGS), None).otherwise(c)
+
+        #  4. Age_Band_of_Driver — null invalid codes 
+        if out_name == "Age_Band_of_Driver":
+            c = F.when(c.isin(VALID_AGE_BANDS), c).otherwise(None)
+
+        #  5. Sex_of_Driver — normalise M/F/1/2/3 ─
+        if out_name == "Sex_of_Driver":
+            c = (F.when(c.isin(["M", "1"]), "Male")
+                  .when(c.isin(["F", "2"]), "Female")
+                  .when(c == "3",           "Not known")
+                  .otherwise(c))
+
+        #  6. Day_of_Week — re-derive from Date (source of truth) 
+        if out_name == "Day_of_Week":
+            c = F.date_format(F.col("`Date`"), "EEEE")
+
+        #  7. Null negative sentinels for numerics ─
+        if out_name in NUM_IMPUTE_COLS and dtype in ("double", "float"):
+            c = F.when(c < 0, None).otherwise(c)
+
+        #  8. Speed_limit — snap to nearest legal value 
+        if out_name == "Speed_limit":
+            legal = c.isin(UK_LEGAL_SPEED_LIMITS)
+            snapped = (
+                F.when(c <= 25, 20).when(c <= 35, 30)
+                 .when(c <= 45, 40).when(c <= 55, 50)
+                 .when(c <= 65, 60).otherwise(70)
+            )
+            c = F.when(c.isNull(), c).when(legal, c).otherwise(snapped)
+
+        #  9. Validity bounds → NULL ─
+        if out_name in VALIDITY_BOUNDS:
+            lo, hi = VALIDITY_BOUNDS[out_name]
+            c = F.when((c < lo) | (c > hi), None).otherwise(c)
+
+        #  10. Location OSGR fallback constants 
+        if out_name == "Location_Easting_OSGR":
+            c = F.when(c.isNull() | F.isnan(c), F.lit(443666.0)).otherwise(c)
+        if out_name == "Location_Northing_OSGR":
+            c = F.when(c.isNull() | F.isnan(c), F.lit(259090.0)).otherwise(c)
+
+        exprs.append(c.alias(out_name))
+    exprs.append(
+            ((F.col("`Latitude`") * 2).cast("int") / 2).alias("lat_bin")
+        )
+    exprs.append(
+            ((F.col("`Longitude`") * 2).cast("int") / 2).alias("lon_bin")
         )
 
-    # c ─ numeric -1 sentinel → NULL (DfT "unknown" code for numerics)
-    for c in NUM_IMPUTE_COLS:
-        if c in df.columns:
-            safe = f"`{c}`"
-            df = df.withColumn(
-                c,
-                F.when(F.col(safe) < 0, None).otherwise(F.col(safe)),
-            )
-
-    # d ─ snap 36 invalid Speed_limit values to nearest UK legal limit
-    if "Speed_limit" in df.columns:
-        df = _snap_speed_limit(df)
-
-    # e ─ enforce validity bounds — real data errors → NULL
-    # (applied BEFORE the required-column drop so Lat/Lon garbage like 0.0
-    # or 9999 gets nulled first, then the row is dropped if unrecoverable.)
-    for col, (lo, hi) in VALIDITY_BOUNDS.items():
-        if col in df.columns:
-            safe = f"`{col}`"
-            df = df.withColumn(
-                col,
-                F.when((F.col(safe) < lo) | (F.col(safe) > hi), None)
-                .otherwise(F.col(safe)),
-            )
-
-    # e' ─ drop rows missing any REQUIRED column (target + geo)
-    for c in REQUIRED_COLS:
-        if c in df.columns:
-            df = df.filter(F.col(c).isNotNull())
+    return exprs
 
 
-    # g ─ numeric median imputation (MAR, robust to skew)
-    num_present = [c for c in NUM_IMPUTE_COLS if c in df.columns]
+# 
+# Main entry point
+# 
+
+def clean(df: DataFrame) -> DataFrame:
+    """
+    Full cleaning pipeline. Query-plan safe:
+      - All scalar column transforms → ONE .select() call (one Project node)
+      - All required-col null checks  → ONE .filter() call (one Filter node)
+      - Imputer + group-mode fill run after a lineage-breaking cache()
+    """
+
+    # a ─ drop noise + leakage columns up front
+    to_drop = [c for c in HIGH_MISSING_COLS + LEAKAGE_COLS if c in df.columns]
+    if to_drop:
+        df = df.drop(*to_drop)
+
+    #  SINGLE SELECT — all scalar transforms in one Project node ─
+    # Replaces: rename loop + cast loop + sentinel loop + sentinel-numeric loop
+    #         + snap_speed + validity-bounds loop + InScotland + DayOfWeek fix
+    exprs = _build_select_exprs(df)
+    df = df.select(exprs)
+
+    #  SINGLE FILTER — all required-col null checks in one Filter node ─
+    present_required = [c for c in REQUIRED_COLS if c in df.columns]
+    if present_required:
+        combined = reduce(lambda a, b: a & b,
+                          [F.col(c).isNotNull() for c in present_required])
+        df = df.filter(combined)
+
+    #  MODE impute — simple global mode (no join, no plan growth) 
+    mode_present = [c for c in MODE_IMPUTE_COLS if c in df.columns]
+    for c in mode_present:
+        mode_row = (
+            df.filter(F.col(c).isNotNull())
+              .groupBy(c).count()
+              .orderBy(F.col("count").desc())
+              .select(c).head()
+        )
+        if mode_row:
+            df = df.fillna({c: mode_row[0]})
+
+    #  Numeric median impute ─
+    num_present = [
+        c for c in NUM_IMPUTE_COLS
+        if c in df.columns
+        and df.filter(F.col(c).isNotNull()).limit(1).count() > 0
+    ]
     if num_present:
-        # Rename columns with special chars (dots/parens) to safe names
-        # Imputer cannot handle column names containing dots
-        rename_map = {}   # original → safe
-        for c in num_present:
-            if any(ch in c for ch in [".", "(", ")", " "]):
-                safe = c.replace(".", "_").replace("(", "_").replace(")", "_").replace(" ", "_")
-                rename_map[c] = safe
-                df = df.withColumnRenamed(c, safe)
-
-        # Use safe names for imputer
-        safe_num_present = [rename_map.get(c, c) for c in num_present]
-
         imputer = Imputer(
-            inputCols=safe_num_present,
-            outputCols=safe_num_present,
+            inputCols=num_present,
+            outputCols=num_present,
             strategy="median",
         )
         df = imputer.fit(df).transform(df)
 
-        # Rename back to original names
-        for original, safe_name in rename_map.items():
-            df = df.withColumnRenamed(safe_name, original)
+    #  Group-mode fill — cache first to avoid replaying full pipeline 
+    # cache() + count() materialises the DataFrame so the Window aggregation
+    # runs on stable data, not a re-executed chain of transforms.
+    df.cache()
+    df.count()
 
-    # h ─ group-wise mode fill (model ← mode per make)
     for target, group in GROUP_MODE_IMPUTE:
         df = _fill_mode_by_group(df, target, group)
 
-    # i ─ remaining categoricals — give nulls their own "Unknown" level
+    #  Remaining categoricals → "Unknown" level 
     cat_present = [c for c in CAT_IMPUTE_COLS if c in df.columns]
     if cat_present:
         df = df.fillna("Unknown", subset=cat_present)
 
+    #  Dot-column fillna — fillna(subset) cannot handle dots in names 
+    DOT_CAT_COLS = ["Vehicle_Location.Restricted_Lane"]
+    for c in DOT_CAT_COLS:
+        if c in df.columns:
+            df = df.withColumn(
+                c,
+                F.when(F.col(f"`{c}`").isNull(), F.lit("Unknown"))
+                 .otherwise(F.col(f"`{c}`"))
+            )
+
     return df
 
 
-# ══════════════════════════════════════════════════════════════════════════
-# Optional helper — class-imbalance rebalancing (training split only!)
-# ══════════════════════════════════════════════════════════════════════════
-def rebalance_undersample(
+# 
+# Class weighting
+# 
+
+def compute_class_weights(df: DataFrame, label_col: str = "Accident_Severity") -> dict:
+    counts = {r[label_col]: r["count"] for r in df.groupBy(label_col).count().collect()}
+    total = sum(counts.values())
+    n_classes = len(counts)
+    return {cls: total / (n_classes * cnt) for cls, cnt in counts.items()}
+
+
+def add_class_weights(
     df: DataFrame,
+    weights: dict,
     label_col: str = "Accident_Severity",
-    ratio: float = 3.0,
-    seed: int = 42,
+    weight_col: str = "classWeight",
 ) -> DataFrame:
-    """
-    Undersample the majority class so that the largest class is at most
-    `ratio` × the smallest class. With the default ratio=3 the target
-    distribution becomes roughly Slight:Serious:Fatal = 3:3:1 instead of
-    85:14:1 — still slightly imbalanced (so priors aren't totally wrong)
-    but close enough for LR/RF to learn minority patterns.
-
-    IMPORTANT: call this ONLY on the training split, never on test.
-    Resampling the test set produces misleading performance metrics.
-
-    Example:
-        train, test = cleaned.randomSplit([0.8, 0.2], seed=42)
-        train_balanced = rebalance_undersample(train)
-        model = pipeline.fit(train_balanced)
-        metrics = evaluator.evaluate(model.transform(test))   # unresampled!
-    """
-    counts = {r[label_col]: r["count"]
-              for r in df.groupBy(label_col).count().collect()}
-    if not counts:
-        return df
-
-    min_count = min(counts.values())
-    target = int(min_count * ratio)
-
-    parts = []
-    for cls, n in counts.items():
-        frac = min(1.0, target / n)
-        parts.append(
-            df.filter(F.col(label_col) == cls).sample(frac, seed=seed)
-        )
-
-    # Union all the per-class samples
-    out = parts[0]
-    for p in parts[1:]:
-        out = out.unionByName(p)
-    return out
+    expr = None
+    for cls, w in weights.items():
+        condition = F.col(label_col) == cls
+        expr = F.when(condition, w) if expr is None else expr.when(condition, w)
+    return df.withColumn(weight_col, expr.otherwise(1.0))

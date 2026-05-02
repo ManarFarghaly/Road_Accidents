@@ -1,25 +1,3 @@
-"""
-Data Validation Script — UK Road Accidents Project
-CMPS344 Applied Data Science — Phase 2
-
-Covers all 8 validation dimensions from the course lecture:
-    1. Accuracy       — business rule checks
-    2. Consistency    — format and logical cross-field checks
-    3. Completeness   — missing value analysis
-    4. Uniqueness     — duplicate detection (exact + key-level)
-    5. Outliers       — IQR, Z-score, Isolation Forest
-    6. Timeliness     — date range, year coverage, COVID dip flag
-    7. Distribution   — min/max/mean/std/skewness/kurtosis/KS test
-    8. Relationships  — Pearson vs Spearman, high-correlation flags
-
-Outputs (all saved to reports/):
-    validation_report.json     — full machine-readable findings
-    validation_summary.txt     — plain-text summary for report screenshot
-
-Usage:
-    poetry run python src/data/validate.py
-    make validate
-"""
 
 import json
 import warnings
@@ -48,12 +26,12 @@ path = download_dataset()
 
 warnings.filterwarnings("ignore")
 
-# ── Paths ───────────────────────────────────────────────────────────────────
+# ── Paths ───────────────────────
 RAW_DIR     = Path(path)
 REPORTS_DIR  = Path("reports")
 ACCIDENTS_FILE = RAW_DIR / "Accident_Information.csv"
 VEHICLES_FILE  = RAW_DIR / "Vehicle_Information.csv" 
-# ── Report accumulator ──────────────────────────────────────────────────────
+# ── Report accumulator ──────────
 report = {
     "generated_at": datetime.now().isoformat(),
     "dimensions": {},
@@ -68,7 +46,7 @@ KS_SAMPLE_SIZE = 5000
 MISSING_VALUE_THRESHOLD = 20.0 
 VALID_DAYS = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"}
 
-# ── Helper functions ────────────────────────────────────────────────────────
+# ── Helper functions ────────────
 def log(msg: str = "",log_lines: list= None):
     """
     Logs a message to console and optionally appends it to a log list.
@@ -153,9 +131,9 @@ def generate_histogram_image(key, hist_data, buf_store: list):
     buf_store.append(buf)  # ← keep alive until doc.build() finishes
     return Image(buf, width=5*inch, height=2.5*inch)
 
-# ════════════════════════════════════════════════════════════════════════════
+# 
 #  DATA LOADING
-# ════════════════════════════════════════════════════════════════════════════
+# 
 
 def load_tables(log_lines: list):
     """
@@ -184,32 +162,13 @@ def load_tables(log_lines: list):
     log(f"\nLoaded accidents : {acc.shape[0]:>9,} rows x {acc.shape[1]} columns", log_lines)
     log(f"Loaded vehicles  : {veh.shape[0]:>9,} rows x {veh.shape[1]} columns", log_lines)
     return acc, veh
-# ════════════════════════════════════════════════════════════════════════════
+# 
 #  DIMENSION 1 — ACCURACY
 #  Does data correctly represent reality?
 #  Apply business rules specific to UK road accident data.
-# ════════════════════════════════════════════════════════════════════════════
+# 
 
 def check_accuracy(acc: pd.DataFrame, veh: pd.DataFrame, log_lines: list, report: dict):
-    """
-    Performs accuracy validation checks based on UK road accident business rules.
-    
-    Validates that data correctly represents reality by checking:
-    - Accident_Severity is one of 3 valid classes (Slight/Serious/Fatal)
-    - Speed_limit is a valid UK legal limit (20, 30, 40, 50, 60, 70 mph)
-    - Coordinates fall within UK geographic bounds (49-61°N, -8 to 2°E)
-    - Number_of_Vehicles is positive (≥1)
-    - Age_of_Vehicle is non-negative
-    - Age_Band_of_Driver contains valid age bands
-    - Day_of_Week contains valid day names
-    - Sex_of_Driver is Male or Female
-    
-    Args:
-        acc (pd.DataFrame): The accidents DataFrame.
-        veh (pd.DataFrame): The vehicles DataFrame.
-        log_lines (list): The list for logging messages.
-        report (dict): The main report dictionary to update with findings.
-    """
     log("\n" + "-" * 65, log_lines)
     log("DIMENSION 1 — ACCURACY", log_lines)
     log("-" * 65, log_lines)
@@ -300,26 +259,9 @@ def check_accuracy(acc: pd.DataFrame, veh: pd.DataFrame, log_lines: list, report
     report["dimensions"]["accuracy"] = dim
 
 
-# ════════════════════════════════════════════════════════════════════════════
 #  DIMENSION 2 — CONSISTENCY
-#  Is data uniform across fields, formats, and both tables?
-# ════════════════════════════════════════════════════════════════════════════
-
 def check_consistency(acc: pd.DataFrame, veh: pd.DataFrame, log_lines: list, report: dict):
-    """    
-    Validates that data is uniform across fields and both tables by checking:
-    - Date column parses correctly as datetime (YYYY-MM-DD format)
-    - Year column matches the year extracted from Date
-    - Day_of_Week matches the actual day calculated from Date
-    - Time follows HH:MM format
-    - Year values are consistent across accidents and vehicles tables for the same accident
-    
-    Args:
-        acc (pd.DataFrame): The accidents DataFrame.
-        veh (pd.DataFrame): The vehicles DataFrame.
-        log_lines (list): The list for logging messages.
-        report (dict): The main report dictionary to update with findings.
-    """
+
     log("\n" + "-" * 65, log_lines)
     log("DIMENSION 2 — CONSISTENCY", log_lines)
     log("-" * 65, log_lines)
@@ -389,181 +331,124 @@ def check_consistency(acc: pd.DataFrame, veh: pd.DataFrame, log_lines: list, rep
 
     report["dimensions"]["consistency"] = dim
 
-# ════════════════════════════════════════════════════════════════════════════
-#  DIMENSION 3 — COMPLETENESS
-#  Is all required data present? Missing value analysis per column.
-# ════════════════════════════════════════════════════════════════════════════
+# Define only what is strictly necessary to keep a row
+REQUIRED_COLS = [
+    "Accident_Index", "Vehicle_Reference", # Keys
+    "Accident_Severity",                   # Target
+    "Latitude", "Longitude",               # Spatial
+    "Date", "Time"                         # Temporal
+]
 
 def check_completeness(acc: pd.DataFrame, veh: pd.DataFrame, log_lines: list, report: dict):
-    """
-    Performs comprehensive missing value analysis:
-    - Identifies all columns with missing data
-    - Calculates missing counts and percentages
-    - Flags required columns with any nulls
-    - Flags any column with >20% missing values
-    - Displays top 12 columns by missing percentage
-    
-    Args:
-        acc (pd.DataFrame): The accidents DataFrame.
-        veh (pd.DataFrame): The vehicles DataFrame.
-        log_lines (list): The list for logging messages.
-        report (dict): The main report dictionary to update with findings.
-    """
     log("\n" + "-" * 65, log_lines)
     log("DIMENSION 3 — COMPLETENESS", log_lines)
     log("-" * 65, log_lines)
+    
     dim = {}
+    
+    # Tables to iterate over
+    datasets = [ (acc, "ACCIDENTS"), (veh, "VEHICLES") ]
 
-    REQUIRED_ACC = [
-        "Accident_Index", "Accident_Severity", "Date", "Latitude", "Longitude",
-        "Year", "Speed_limit", "Road_Type", "Weather_Conditions",
-        "Light_Conditions", "Road_Surface_Conditions", "Urban_or_Rural_Area"
-    ]
-    REQUIRED_VEH = [
-        "Accident_Index", "Vehicle_Type", "Vehicle_Manoeuvre", "Age_Band_of_Driver"
-    ]
-
-    for df, label, required in [
-        (acc, "ACCIDENTS", REQUIRED_ACC),
-        (veh, "VEHICLES",  REQUIRED_VEH)
-    ]:
-        log(f"\n  [{label}]", log_lines)
-        total = len(df)
+    for df, label in datasets:
+        log(f"\n [{label}]", log_lines)
+        total_rows = len(df)
         missing_summary = {}
 
+        # 1. Calculate missingness for EVERY column present in the DF
         for col in df.columns:
-            n = int(df[col].isna().sum())
-            if n > 0:
+            null_count = int(df[col].isna().sum())
+            if null_count > 0:
                 missing_summary[col] = {
-                    "count": n,
-                    "percent": round(n / total * 100, 2)
+                    "count": null_count,
+                    "percent": round(null_count / total_rows * 100, 2)
                 }
-
+        
         dim[f"{label.lower()}_missing"] = missing_summary
 
-        # Print top 12 columns by missing %
-        sorted_m = sorted(missing_summary.items(),
-                          key=lambda x: x[1]["percent"], reverse=True)
-        log(f"  {'Column':<46} {'Missing':>9}  {'%':>6}", log_lines)
-        log(f"  {'-'*46} {'-'*9}  {'-'*6}", log_lines)
+        # 2. Print Top 12 (Reporting only)
+        sorted_m = sorted(missing_summary.items(), key=lambda x: x[1]["percent"], reverse=True)
+        log(f" {'Column':<46} {'Missing':>9} {'%':>6}", log_lines)
+        log(f" {'-'*46} {'-'*9} {'-'*6}", log_lines)
+
         for col, info in sorted_m[:12]:
-            marker = "  <- REQUIRED" if col in required else ""
-            log(f"  {col:<46} {info['count']:>9,}  {info['percent']:>5.1f}%{marker}", log_lines)
-        if len(sorted_m) > 12:
-            log(f"  ... and {len(sorted_m)-12} more columns with missing values", log_lines)
+            # ONLY mark as required if it's in our strictly required list
+            is_required = col in REQUIRED_COLS
+            marker = " [!] REQUIRED" if is_required else ""
+            log(f" {col:<46} {info['count']:>9,} {info['percent']:>5.1f}%{marker}", log_lines)
 
-        # Flag required columns with any nulls
-        crit = [c for c in required if c in df.columns and df[c].isna().sum() > 0]
-        if crit:
-            for c in crit:
-                issue(f"[{label}] Required column '{c}' has "
-                      f"{missing_summary[c]['count']:,} null values "
-                      f"({missing_summary[c]['percent']:.1f}%)", "completeness", report, log_lines)
-        else:
-            log(f"\n  [PASS] No nulls in any required columns for {label}")
-
+        # 3. CRITICAL CHECK: Flag only strictly required columns
+        critical_missing = [c for c in REQUIRED_COLS if c in df.columns and c in missing_summary]
         
-        high = [(c, v) for c, v in sorted_m if v["percent"] > MISSING_VALUE_THRESHOLD]
-        if high:
-            for c, v in high:
-                issue(f"[{label}] '{c}' is {v['percent']:.1f}% missing (>{MISSING_VALUE_THRESHOLD}% threshold)",
-                      "completeness", report, log_lines)
+        if critical_missing:
+            for col in critical_missing:
+                info = missing_summary[col]
+                issue(f"[{label}] CRITICAL: '{col}' has {info['count']:,} nulls ({info['percent']}%). "
+                      f"These rows must be dropped.", "completeness", report, log_lines)
+        else:
+            log(f" [PASS] All strictly required columns in {label} are 100% complete.", log_lines)
+
+        # 4. THRESHOLD CHECK: Flag columns that are "too empty" to be useful
+        # (e.g. Special_Conditions_at_Site at 97% missing)
+        high_missing = [(c, v) for c, v in sorted_m if v["percent"] > 50.0] # 50% threshold
+        for col, info in high_missing:
+            if col not in REQUIRED_COLS: # Don't double-flag if already caught above
+                log(f" [ADVICE] '{col}' is {info['percent']}% missing. Consider dropping this feature.", log_lines)
 
     report["dimensions"]["completeness"] = dim
 
-
-# ════════════════════════════════════════════════════════════════════════════
+# 
 #  DIMENSION 4 — UNIQUENESS
 #  Exact duplicates, key-level duplicates, composite key check.
-# ════════════════════════════════════════════════════════════════════════════
-
-def check_uniqueness(acc: pd.DataFrame, veh: pd.DataFrame, log_lines: list, report: dict):
+# 
+def check_uniqueness(merged_df: pd.DataFrame, log_lines: list, report: dict):
     """
-    Performs duplicate detection at multiple levels:
-    - Exact duplicates (all fields identical) in both tables
-    - Accident_Index duplicates in accidents table (should be unique)
-    - Accident_Index duplicates in vehicles table (expected by design)
-    - Composite key (Accident_Index, Vehicle_Reference) duplicates in vehicles
-    
-    Args:
-        acc (pd.DataFrame): The accidents DataFrame.
-        veh (pd.DataFrame): The vehicles DataFrame.
-        log_lines (list): The list for logging messages.
-        report (dict): The main report dictionary to update with findings.
-    """    
+    Checks uniqueness on the FINAL merged dataset.
+    - Exact Duplicates: Should be zero.
+    - Accident_Index: Duplicates are EXPECTED (because one accident has many vehicles).
+    - Composite Key (Accident_Index + Vehicle_Reference): MUST be unique.
+    """
     log("\n" + "-" * 65, log_lines)
-    log("DIMENSION 4 — UNIQUENESS", log_lines)
+    log("DIMENSION 4 — UNIQUENESS (POST-MERGE)", log_lines)
     log("-" * 65, log_lines)
+    
     dim = {}
+    total_rows = len(merged_df)
 
-    # Accidents: Accident_Index MUST be unique (one row per accident)
-    acc_exact = int(acc.duplicated().sum())
-    acc_key   = int(acc["Accident_Index"].duplicated().sum())
-    dim["accidents_exact_duplicates"] = acc_exact
-    dim["accidents_key_duplicates"]   = acc_key
-
-    if acc_exact:
-        issue(f"Accidents table: {acc_exact:,} fully duplicate rows", "uniqueness", report, log_lines)
+    # 1. Exact Row Duplicates (Every single column identical)
+    exact_dups = int(merged_df.duplicated().sum())
+    dim["total_exact_duplicates"] = exact_dups
+    
+    if exact_dups > 0:
+        issue(f"Merged Data: {exact_dups:,} fully duplicate rows found.", "uniqueness", report, log_lines)
     else:
-        log("  [PASS] Accidents — zero fully duplicate rows", log_lines)
+        log(" [PASS] Zero fully duplicate rows in merged data.", log_lines)
 
-    if acc_key:
-        issue(f"Accidents table: {acc_key:,} duplicate Accident_Index values "
-              f"(each accident must appear exactly once)", "uniqueness", report, log_lines)
-    else:
-        log(f"  [PASS] Accidents — all {len(acc):,} Accident_Index values are unique", log_lines)
-
-    # Vehicles: Accident_Index duplicates are EXPECTED (multiple vehicles per accident)
-    veh_exact = int(veh.duplicated().sum())
-    veh_key   = int(veh["Accident_Index"].duplicated().sum())
-    dim["vehicles_exact_duplicates"]             = veh_exact
-    dim["vehicles_duplicate_accident_index"]     = veh_key
-    dim["vehicles_duplicate_accident_index_note"] = (
-        "Duplicate Accident_Index values in the vehicles table are EXPECTED "
-        "by design — multiple vehicles can be involved in one accident."
-    )
-
-    if veh_exact:
-        issue(f"Vehicles table: {veh_exact:,} fully duplicate rows "
-              f"(all fields identical — unexpected)", "uniqueness", report, log_lines)
-    else:
-        log("  [PASS] Vehicles — zero fully duplicate rows", log_lines)
-
-    log(f"  [INFO] Vehicles — {veh_key:,} duplicate Accident_Index values (expected by design)", log_lines)
-
-    # Vehicles composite key: (Accident_Index + Vehicle_Reference) must be unique
-    if column_exists(veh, "Vehicle_Reference", log_lines) and column_exists(veh, "Accident_Index", log_lines):
-        comp_dups = int(
-            veh.duplicated(subset=["Accident_Index", "Vehicle_Reference"]).sum()
-        )
-        dim["vehicles_composite_key_duplicates"] = comp_dups
-        if comp_dups:
-            issue(f"Vehicles: {comp_dups:,} duplicate (Accident_Index, Vehicle_Reference) pairs",
+    # 2. Composite Key Uniqueness (The most important check)
+    # In a merged Accidents+Vehicles table, this pair defines a unique row.
+    if "Accident_Index" in merged_df.columns and "Vehicle_Reference" in merged_df.columns:
+        comp_key_dups = int(merged_df.duplicated(subset=["Accident_Index", "Vehicle_Reference"]).sum())
+        dim["composite_key_duplicates"] = comp_key_dups
+        
+        if comp_key_dups > 0:
+            issue(f"Integrity Error: {comp_key_dups:,} duplicate (Accident_Index, Vehicle_Reference) pairs!", 
                   "uniqueness", report, log_lines)
         else:
-            log("  [PASS] Vehicles — (Accident_Index, Vehicle_Reference) composite key is fully unique", log_lines)
+            log(" [PASS] Composite key (Accident_Index, Vehicle_Reference) is unique.", log_lines)
+    else:
+        log(" [WARN] Composite key columns missing; skipping key uniqueness check.", log_lines)
+
+    # 3. Informational: Accident_Index Duplication
+    # We don't issue an 'issue' here because duplicates are expected by design.
+    acc_id_dups = int(merged_df.duplicated(subset=["Accident_Index"]).sum())
+    dim["duplicate_accident_indices"] = acc_id_dups
+    log(f" [INFO] Found {acc_id_dups:,} repeated Accident_Indices (Expected: multiple vehicles per accident).", log_lines)
 
     report["dimensions"]["uniqueness"] = dim
 
 
-# ════════════════════════════════════════════════════════════════════════════
 #  DIMENSION 5 — OUTLIERS
 #  IQR method + Z-score method + Isolation Forest (all 3 from lecture)
-# ════════════════════════════════════════════════════════════════════════════
-
 def check_outliers(acc: pd.DataFrame, veh: pd.DataFrame, log_lines: list, report: dict):
-    """
-    Applies three outlier detection approaches:
-    1. IQR Method (univariate): Flags values outside Q1 - 1.5*IQR to Q3 + 1.5*IQR
-    2. Isolation Forest (multivariate): Detects anomalies using ensemble method
-       with 5% contamination rate
-    
-    Args:
-        acc (pd.DataFrame): The accidents DataFrame.
-        veh (pd.DataFrame): The vehicles DataFrame.
-        log_lines (list): The list for logging messages.
-        report (dict): The main report dictionary to update with findings.
-    """
     log("\n" + "-" * 65, log_lines)
     log("DIMENSION 5 — OUTLIERS", log_lines)
     log("-" * 65, log_lines)
@@ -572,14 +457,14 @@ def check_outliers(acc: pd.DataFrame, veh: pd.DataFrame, log_lines: list, report
     COLS_ACC = ["Speed_limit", "Number_of_Casualties", "Number_of_Vehicles"]
     COLS_VEH = ["Age_of_Vehicle", "Engine_Capacity_.CC."]
 
-    # ── IQR method ──────────────────────────────────────────────────────────
+    # ── IQR method ──────────────
     log("\n  IQR Method  (bounds = Q1 - 1.5*IQR  and  Q3 + 1.5*IQR):", log_lines)
     log(f"  {'Column':<42} {'Outliers':>10}  {'Lower fence':>12}  {'Upper fence':>12}", log_lines)
     log(f"  {'-'*42} {'-'*10}  {'-'*12}  {'-'*12}", log_lines)
 
     iqr_res = {}
     for df, cols, label in [(acc, COLS_ACC, "accidents"),
-                             (veh, COLS_VEH, "vehicles")]:
+                            (veh, COLS_VEH, "vehicles")]:
         for col in cols:
             if col not in df.columns:
                 continue
@@ -600,7 +485,7 @@ def check_outliers(acc: pd.DataFrame, veh: pd.DataFrame, log_lines: list, report
     iso_res = {}
 
     for df, cols, label in [(acc, COLS_ACC, "accidents"),
-                             (veh, COLS_VEH, "vehicles")]:
+                            (veh, COLS_VEH, "vehicles")]:
         avail = [c for c in cols if c in df.columns]
         if len(avail) < 2:
             continue
@@ -626,10 +511,9 @@ def check_outliers(acc: pd.DataFrame, veh: pd.DataFrame, log_lines: list, report
     report["dimensions"]["outliers"] = dim
 
 
-# ════════════════════════════════════════════════════════════════════════════
+# 
 #  DIMENSION 6 — TIMELINESS
-#  Date range validity, year coverage, COVID dip detection.
-# ════════════════════════════════════════════════════════════════════════════
+# 
 
 def check_timeliness(acc: pd.DataFrame, log_lines: list, report: dict):
     """
@@ -681,36 +565,21 @@ def check_timeliness(acc: pd.DataFrame, log_lines: list, report: dict):
     report["dimensions"]["timeliness"] = dim
 
 
-# ════════════════════════════════════════════════════════════════════════════
+# 
 #  DIMENSION 7 — DISTRIBUTION PROFILE
 #  Descriptive stats + skewness + kurtosis + KS test vs normal
-# ════════════════════════════════════════════════════════════════════════════
+# 
 
-def check_distribution(acc: pd.DataFrame, veh: pd.DataFrame, log_lines: list, report: dict):
-    """    
-    Performs comprehensive distribution analysis:
-    - Descriptive statistics (min, max, mean, median, std)
-    - Shape metrics (skewness, kurtosis)
-    - Cardinality (unique value counts)
-    - Histograms (10 equal-width bins with ASCII bar charts)
-    - Kolmogorov-Smirnov test against normal distribution
-    - Target class distribution (Accident_Severity)
-    - Categorical feature value distributions
-    
-    Args:
-        acc (pd.DataFrame): The accidents DataFrame.
-        veh (pd.DataFrame): The vehicles DataFrame.
-        log_lines (list): The list for logging messages.
-        report (dict): The main report dictionary to update with findings.
-    """    
+def check_distribution(acc: pd.DataFrame, veh: pd.DataFrame, log_lines: list, report: dict):  
     log("\n" + "-" * 65, log_lines)
     log("DIMENSION 7 — DISTRIBUTION PROFILE", log_lines)
     log("-" * 65, log_lines)
     dim = {}
 
-    COLS_ACC = ["Speed_limit", "Number_of_Casualties", "Number_of_Vehicles",
-                "Latitude", "Longitude"]
-    COLS_VEH = ["Age_of_Vehicle", "Engine_Capacity_.CC."]
+    COLS_ACC = ["Latitude", "Longitude", "Speed_limit","Number_of_Casualties","Number_of_Vehicles"]
+
+    COLS_VEH = ["Age_of_Vehicle","Driver_IMD_Decile",
+        "Number_of_Casualties", "Number_of_Occupants", "Skidding_and_Overturning"]
 
     log(f"\n  {'Column':<42} {'Min':>7} {'Max':>8} {'Mean':>8} "
         f"{'Median':>8} {'Std':>8} {'Skew':>7} {'Kurt':>7}  {'Card':>6}", log_lines)
@@ -821,10 +690,10 @@ def check_distribution(acc: pd.DataFrame, veh: pd.DataFrame, log_lines: list, re
     report["dimensions"]["distribution"] = dim
 
 
-# ════════════════════════════════════════════════════════════════════════════
+# 
 #  DIMENSION 8 — RELATIONSHIPS
 #  Pearson vs Spearman on numeric pairs, flag high correlations
-# ════════════════════════════════════════════════════════════════════════════
+# 
 
 def check_relationships(acc: pd.DataFrame, log_lines: list, report: dict):
     """    
@@ -902,7 +771,7 @@ def check_relationships(acc: pd.DataFrame, log_lines: list, report: dict):
     if not high_corr:
         log("\n  [PASS] No high-correlation pairs found (threshold |r| > 0.85)", log_lines)
 
-    # ── Correlation heatmap PNG ────────────────────────────────────────────
+    # ── Correlation heatmap PNG 
     # Saves reports/correlation_heatmap.png for the PDF + visual QA.
     try:
         REPORTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -934,9 +803,9 @@ def check_relationships(acc: pd.DataFrame, log_lines: list, report: dict):
     report["dimensions"]["relationships"] = dim
 
 
-# ════════════════════════════════════════════════════════════════════════════
+# 
 #  JOIN INTEGRITY — multi-source merge validation (rubric requirement)
-# ════════════════════════════════════════════════════════════════════════════
+# 
 
 def check_join_integrity(acc: pd.DataFrame, veh: pd.DataFrame, log_lines: list, report: dict):
     """
@@ -992,9 +861,9 @@ def check_join_integrity(acc: pd.DataFrame, veh: pd.DataFrame, log_lines: list, 
     report["dimensions"]["join_integrity"] = dim
 
 
-# ════════════════════════════════════════════════════════════════════════════
+# 
 #  SAVE ALL OUTPUTS
-# ════════════════════════════════════════════════════════════════════════════
+# 
 
 def save_outputs(log_lines: list, report: dict):
     """    
@@ -1110,16 +979,6 @@ def generate_pdf_report(pdf_path, total, report,log_lines):
     elements.append(Spacer(1, 0.3*inch))
     elements.append(PageBreak())
     
-
-    # if report["summary"]["issues"]:
-    #     elements.append(Paragraph("Detailed Issues", styles['Heading2']))
-    #     elements.append(Spacer(1, 0.15*inch))
-        
-    #     for issue_item in report["summary"]["issues"]:
-    #         issue_text = f"<b>[{issue_item.get('dimension', 'UNKNOWN')}]</b> {issue_item.get('message', 'N/A')}"
-    #         elements.append(Paragraph(issue_text, styles['Normal']))
-    #         elements.append(Spacer(1, 0.1*inch))
-    
     # ── Correlation heatmap page ─────────────────────────
     rel = report.get("dimensions", {}).get("relationships", {})
     heatmap_path = rel.get("heatmap_path")
@@ -1169,24 +1028,161 @@ def generate_pdf_report(pdf_path, total, report,log_lines):
         safe_line = line.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
         elements.append(Paragraph(safe_line if safe_line.strip() else "&nbsp;", mono_style))
 
-    # if report.get("dimensions"):
-    #     elements.append(PageBreak())
-    #     elements.append(Paragraph("Validation Summary by Dimension", styles['Heading2']))
-    #     elements.append(Spacer(1, 0.15*inch))
-        
-    #     for dim_name, dim_data in report["dimensions"].items():
-    #         if isinstance(dim_data, dict):
-    #             elements.append(Paragraph(f"<b>{dim_name.upper()}</b>", styles['Heading3']))
-    #             summary_text = f"{len(dim_data)} checks performed"
-    #             elements.append(Paragraph(summary_text, styles['Normal']))
-    #             elements.append(Spacer(1, 0.1*inch))
-    
     doc.build(elements)
 
 
-# ════════════════════════════════════════════════════════════════════════════
+# 
+#  DIMENSION 7b — WEATHER COLUMN DISTRIBUTION PROFILE
+#  Validates weather numerics joined from Meteostat:
+#  temp, tmin, tmax, prcp, snwd, wspd, pres, rhum, wpgt, tsun, cldc
+# 
+
+WEATHER_COLS = [
+    "temp", "tmin", "tmax",   # temperature (°C)
+    "prcp",                   # precipitation (mm)
+    "snwd",                   # snow depth (mm)
+    "wspd",                   # wind speed (km/h)
+    "pres",                   # air pressure (hPa)
+    "rhum",                   # relative humidity (%)
+    "wpgt",                   # wind peak gust (km/h)
+    "tsun",                   # sunshine duration (min)
+    "cldc"                   # cloud cover (%)
+]
+
+# Physical validity bounds — values outside these are almost certainly errors
+WEATHER_BOUNDS = {
+    "temp":  (-30,  50),
+    "tmin":  (-30,  45),
+    "tmax":  (-25,  50),
+    "prcp":  (0,   10000),
+    "snwd":  (0,  2000),
+    "wspd":  (0,   114),
+    "pres":  (870, 1085),
+    "rhum":  (0,   100),
+    "wpgt":  (0,   114),
+    "tsun":  (0, 1440),  
+    "cldc":  (0,   9),
+}
+
+from pathlib import Path
+def check_weather_distribution(df: pd.DataFrame, log_lines: list, report: dict):
+    if df is None:
+        return
+    log("\n" + "-" * 65, log_lines)
+    log("DIMENSION 7b — WEATHER COLUMN DISTRIBUTION PROFILE", log_lines)
+    log("-" * 65, log_lines)
+    dim: dict = {"stats": {}, "histograms": {}, "ks_tests": {}, "bounds_violations": {}}
+
+    available = [c for c in WEATHER_COLS if c in df.columns]
+    missing_cols = set(WEATHER_COLS) - set(available)
+    if missing_cols:
+        log(f"  [WARN] Weather columns not found in DataFrame: {sorted(missing_cols)}", log_lines)
+
+    if not available:
+        log("  [SKIP] No weather columns present — was the Meteostat join run?", log_lines)
+        report["dimensions"]["weather_distribution"] = dim
+        return
+
+    #  Header 
+    log(f"\n  {'Column':<10} {'Missing%':>9} {'Min':>8} {'Max':>8} "
+        f"{'Mean':>8} {'Median':>8} {'Std':>8} {'Skew':>7} {'Kurt':>7}", log_lines)
+    log(f"  {'-'*10} {'-'*9} {'-'*8} {'-'*8} {'-'*8} {'-'*8} {'-'*8} {'-'*7} {'-'*7}", log_lines)
+
+    for col in available:
+        s = to_numeric_safe(df[col])
+        total = len(s)
+        n_null = int(s.isna().sum())
+        missing_pct = round(n_null / total * 100, 2)
+        s_valid = s.dropna()
+
+        #  Completeness flag 
+        if missing_pct > MISSING_VALUE_THRESHOLD:
+            issue(
+                f"[WEATHER] '{col}' is {missing_pct:.1f}% missing "
+                f"(>{MISSING_VALUE_THRESHOLD}% threshold)",
+                "weather_distribution", report, log_lines
+            )
+
+        if len(s_valid) < 10:
+            log(f"  {col:<10} {missing_pct:>8.1f}%  [SKIP — too few valid values]", log_lines)
+            continue
+
+        # ── Descriptive stats 
+        sk = float(skew(s_valid))
+        ku = float(kurtosis(s_valid))
+        cs = {
+            "missing_pct": missing_pct,
+            "min":         round(float(s_valid.min()), 3),
+            "max":         round(float(s_valid.max()), 3),
+            "mean":        round(float(s_valid.mean()), 3),
+            "median":      round(float(s_valid.median()), 3),
+            "std":         round(float(s_valid.std()), 3),
+            "skewness":    round(sk, 3),
+            "kurtosis":    round(ku, 3),
+            "n_valid":     len(s_valid),
+        }
+        dim["stats"][col] = cs
+
+        log(f"  {col:<10} {missing_pct:>8.1f}% {cs['min']:>8.2f} {cs['max']:>8.2f} "
+            f"{cs['mean']:>8.2f} {cs['median']:>8.2f} {cs['std']:>8.2f} "
+            f"{sk:>7.2f} {ku:>7.2f}", log_lines)
+
+        # ── Physical bounds check ────────────────────────────────────────
+        if col in WEATHER_BOUNDS:
+            lo, hi = WEATHER_BOUNDS[col]
+            n_out = int(((s_valid < lo) | (s_valid > hi)).sum())
+            dim["bounds_violations"][col] = {"count": n_out, "bounds": (lo, hi)}
+            if n_out:
+                issue(
+                    f"[WEATHER] '{col}' has {n_out:,} values outside physical range "
+                    f"[{lo}, {hi}]",
+                    "weather_distribution", report, log_lines
+                )
+            else:
+                log(f"    [PASS] {col} — all values within physical bounds [{lo}, {hi}]", log_lines)
+
+        # ── Histogram (10 bins) ──────────────────────────────────────────
+        hist_counts, bin_edges = np.histogram(s_valid, bins=10)
+        histogram = {
+            "n_bins":        10,
+            "bin_edges":     [round(float(x), 3) for x in bin_edges],
+            "bin_counts":    [int(c) for c in hist_counts],
+            "histogram_pct": [round(100 * c / len(s_valid), 1) for c in hist_counts],
+        }
+        dim["histograms"][col] = histogram
+
+        log(f"\n    Histogram ({col}):", log_lines)
+        for i, (count, pct) in enumerate(
+            zip(hist_counts, histogram["histogram_pct"])
+        ):
+            b_start = round(bin_edges[i], 2)
+            b_end   = round(bin_edges[i + 1], 2)
+            bar = "▓" * max(1, int(pct / 2))
+            log(f"      [{b_start:>8.2f} – {b_end:>8.2f}]  {count:>8,}  "
+                f"({pct:>5.1f}%)  {bar}", log_lines)
+
+        # ── KS test vs normal 
+        samp = s_valid.sample(min(KS_SAMPLE_SIZE, len(s_valid)), random_state=42)
+        ks_stat, p_val = stats.kstest(
+            samp, "norm", args=(float(samp.mean()), float(samp.std()))
+        )
+        interp = (
+            "NOT normal (p<0.05) — use Spearman"
+            if p_val < 0.05 else
+            "Cannot reject normality — Pearson OK"
+        )
+        dim["ks_tests"][col] = {
+            "ks_statistic":   round(float(ks_stat), 4),
+            "p_value":        round(float(p_val), 6),
+            "interpretation": interp,
+        }
+        log(f"    KS={ks_stat:.4f}  p={p_val:.6f}  → {interp}", log_lines)
+
+    report["dimensions"]["weather_distribution"] = dim
+
+# 
 #  ENTRY POINT
-# ════════════════════════════════════════════════════════════════════════════
+# 
 
 def main():
     """    
@@ -1199,16 +1195,21 @@ def main():
     Returns:
         The complete validation report.
     """
+    merged_path = Path(__file__).resolve().parent.parent.parent / "data" / "interim" / "merged.parquet"
+    merged = pd.read_parquet(merged_path) if merged_path.exists() else print(f"Warning: Merged data not found at {merged_path} — weather distribution checks will be skipped.")
+    log_lines = []
     acc, veh = load_tables(log_lines)
     check_accuracy(acc, veh, log_lines, report)         
     check_consistency(acc, veh, log_lines, report )     
     check_completeness(acc, veh, log_lines, report)    
-    check_uniqueness(acc, veh, log_lines, report)       
+    check_uniqueness(merged, log_lines, report)       
     check_outliers(acc, veh, log_lines, report)         
     check_timeliness(acc, log_lines, report)            
-    check_distribution(acc, veh, log_lines, report)     
+    check_distribution(acc, veh, log_lines, report) 
+    check_weather_distribution(merged, log_lines, report)     
     check_relationships(acc, log_lines, report)         
-    check_join_integrity(acc, veh, log_lines, report)   
+    check_join_integrity(acc, veh, log_lines, report)  
+
     save_outputs(log_lines, report)
     return report
 
