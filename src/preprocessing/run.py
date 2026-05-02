@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pyspark.ml import Pipeline
 from pyspark.sql import functions as F
+from pyspark.ml.feature import VectorAssembler
 
 from src.config import get_spark, MERGED_PARQUET, PROCESSED_DIR, INTERIM_DIR
 from src.preprocessing.clean import clean, compute_class_weights, add_class_weights
@@ -90,6 +91,11 @@ def main():
     pipeline = Pipeline(stages=stages)
     model = pipeline.fit(train)
     print(f"    Pipeline fitted with {len(stages)} stages.")
+    # After model = pipeline.fit(train)
+    assembler = [s for s in model.stages if isinstance(s, VectorAssembler)][0]
+    print(f"\n    Assembler input cols ({len(assembler.getInputCols())}):")
+    for c in assembler.getInputCols():
+        print(f"      {c}")
 
     # ── 6. Transform ──────────────────────────────────────────────────────
     print("\n[6] Transforming train and test splits ...")

@@ -40,7 +40,7 @@ UK_LEGAL_SPEED_LIMITS = [20, 30, 40, 50, 60, 70]
 
 REQUIRED_COLS = [
     "Accident_Severity", "Latitude", "Longitude",
-    "Accident_Index", "Speed_limit", "Vehicle_Reference", "Time", "Date",
+    "Accident_Index", "Speed_limit","Time", "Date",
 ]
 
 VALIDITY_BOUNDS = {
@@ -99,7 +99,7 @@ CAT_IMPUTE_COLS = [
     "X1st_Point_of_Impact", "Journey_Purpose_of_Driver",
     "Driver_Home_Area_Type", "Vehicle_Manoeuvre",
     "2nd_Road_Number", "1st_Road_Number",
-    "Local_Authority_(District)", "Local_Authority_(Highway)", "Police_Force",
+    "Local_Authority_(District)", "Local_Authority_(Highway)", "Police_Force","Vehicle_Reference"
 ]
 
 LABEL_COL = "Accident_Severity"
@@ -171,9 +171,7 @@ def _build_select_exprs(df: DataFrame) -> list:
     rename_map = {"Engine_Capacity_.CC.": "Engine_Capacity_CC"
     , "Vehicle_Location.Restricted_Lane": "Vehicle_Location_Restricted_Lane"
     }
-    # Safe pattern for dot-columns entering the ML pipeline
-    # df = df.withColumnRenamed("Vehicle_Location.Restricted_Lane", 
-    #                        "Vehicle_Location_Restricted_Lane")
+   
 
     for raw_name in df.columns:
         if raw_name in skip:
@@ -241,6 +239,12 @@ def _build_select_exprs(df: DataFrame) -> list:
             c = F.when(c.isNull() | F.isnan(c), F.lit(259090.0)).otherwise(c)
 
         exprs.append(c.alias(out_name))
+    exprs.append(
+            ((F.col("`Latitude`") * 2).cast("int") / 2).alias("lat_bin")
+        )
+    exprs.append(
+            ((F.col("`Longitude`") * 2).cast("int") / 2).alias("lon_bin")
+        )
 
     return exprs
 
