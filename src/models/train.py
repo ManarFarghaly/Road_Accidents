@@ -1,12 +1,9 @@
 from __future__ import annotations
-import time
-
 from pyspark.ml.classification import GBTClassifier, LogisticRegression, OneVsRest,RandomForestClassifier
 from pyspark.ml.evaluation import MulticlassClassificationEvaluator
 from pyspark.ml.tuning import CrossValidator, ParamGridBuilder
 from pyspark.sql import DataFrame
 from pyspark.sql import functions as F
-
 from src.models.pipeline import build_model_pipeline
 from src.preprocessing.clean import compute_class_weights, add_class_weights
 
@@ -148,8 +145,8 @@ def train_gbt(
     gbt = GBTClassifier(
         featuresCol="features",
         labelCol="label",
-        maxIter=50,
-        maxDepth=5,
+        maxIter=15,
+        maxDepth=3,
         maxBins=512,
         stepSize=0.1,
         seed=42,
@@ -163,8 +160,8 @@ def train_gbt(
 
     param_grid = (
         ParamGridBuilder()
-        .addGrid(gbt.maxIter, [30, 50])
-        .addGrid(gbt.maxDepth, [4, 6])
+        .addGrid(gbt.maxIter, [10, 15])
+        .addGrid(gbt.maxDepth, [3, 4])
         .build()
     )
     cv = CrossValidator(
