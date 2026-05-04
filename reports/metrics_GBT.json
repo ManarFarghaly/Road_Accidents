@@ -1,24 +1,24 @@
 {
   "model_name": "GBT",
-  "generated_at": "2026-05-04T03:22:51.838070",
+  "generated_at": "2026-05-04T23:33:07.958359",
   "train": {
-    "accuracy": 0.8428,
-    "weighted_f1": 0.8052,
-    "cohen_kappa": 0.1319,
+    "accuracy": 0.8488,
+    "weighted_f1": 0.8022,
+    "cohen_kappa": 0.1023,
     "confusion_matrix": [
       [
-        1793874,
-        58960,
+        1818630,
+        34204,
         0
       ],
       [
-        254378,
-        37377,
+        266073,
+        25682,
         0
       ],
       [
-        22379,
-        5948,
+        24202,
+        4125,
         0
       ]
     ],
@@ -29,14 +29,14 @@
     ],
     "per_class": {
       "Slight": {
-        "precision": 0.8663,
-        "recall": 0.9682,
-        "f1": 0.9144
+        "precision": 0.8624,
+        "recall": 0.9815,
+        "f1": 0.9181
       },
       "Serious": {
-        "precision": 0.3654,
-        "recall": 0.1281,
-        "f1": 0.1897
+        "precision": 0.4012,
+        "recall": 0.088,
+        "f1": 0.1444
       },
       "Fatal": {
         "precision": 0.0,
@@ -46,23 +46,23 @@
     }
   },
   "test": {
-    "accuracy": 0.8367,
-    "weighted_f1": 0.7968,
-    "cohen_kappa": 0.091,
+    "accuracy": 0.8448,
+    "weighted_f1": 0.7961,
+    "cohen_kappa": 0.0719,
     "confusion_matrix": [
       [
-        446569,
-        16033,
+        453327,
+        9275,
         0
       ],
       [
-        65439,
-        7352,
+        67764,
+        5027,
         0
       ],
       [
-        6107,
-        1042,
+        6455,
+        694,
         0
       ]
     ],
@@ -73,14 +73,14 @@
     ],
     "per_class": {
       "Slight": {
-        "precision": 0.8619,
-        "recall": 0.9653,
-        "f1": 0.9107
+        "precision": 0.8593,
+        "recall": 0.98,
+        "f1": 0.9157
       },
       "Serious": {
-        "precision": 0.301,
-        "recall": 0.101,
-        "f1": 0.1512
+        "precision": 0.3352,
+        "recall": 0.0691,
+        "f1": 0.1145
       },
       "Fatal": {
         "precision": 0.0,

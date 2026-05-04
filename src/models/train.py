@@ -138,18 +138,12 @@ def train_gbt(
     fatal_serious = train_df.filter(F.col("Accident_Severity") != "Slight")
     slight = train_df.filter(F.col("Accident_Severity") == "Slight").sample(fraction=0.5, seed=42)
     balanced_train = fatal_serious.union(slight)
-    
-    # Apply class weights to further balance minority classes
-    weights = compute_class_weights(balanced_train)
-    balanced_train = add_class_weights(balanced_train, weights, weight_col="class_weight")
-
     # Logistic loss (binary, per tree)
     # loss = -[ y × log(p) + (1-y) × log(1-p) ]
 
     gbt = GBTClassifier(
         featuresCol="features",
         labelCol="label",
-        weightCol="class_weight",
         maxIter=15,
         maxDepth=3,
         maxBins=512,

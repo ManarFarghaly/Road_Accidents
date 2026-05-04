@@ -77,29 +77,29 @@ def main() -> None:
     # 3. Shared preprocessing stages (fit inside each Pipeline)
     preprocessing_stages = build_preprocessing_stages()
 
-    # 4. Train Logistic Regression (Baseline)
-    lr_model = train_logistic_regression(
-        train_df, preprocessing_stages, use_cv=USE_CV_LR
-    )
-    save_model(lr_model, MODELS_DIR / "lr")
-    _evaluate_and_log("Logistic Regression", lr_model, test_df, METRICS_PATH)
-    save_model_metrics(
-        "Logistic Regression",
-        evaluate_model("Logistic Regression", lr_model, train_df, test_df),
-        REPORTS_DIR,
-    )
+    # # 4. Train Logistic Regression (Baseline)
+    # lr_model = train_logistic_regression(
+    #     train_df, preprocessing_stages, use_cv=USE_CV_LR
+    # )
+    # save_model(lr_model, MODELS_DIR / "lr")
+    # _evaluate_and_log("Logistic Regression", lr_model, test_df, METRICS_PATH)
+    # save_model_metrics(
+    #     "Logistic Regression",
+    #     evaluate_model("Logistic Regression", lr_model, train_df, test_df),
+    #     REPORTS_DIR,
+    # )
 
-    # 5. Train Random Forest
-    rf_model = train_random_forest(
-        train_df, preprocessing_stages, use_cv=USE_CV_RF
-    )
-    save_model(rf_model, MODELS_DIR / "rf")
-    _evaluate_and_log("Random Forest", rf_model, test_df, METRICS_PATH)
-    save_model_metrics(
-        "Random Forest",
-        evaluate_model("Random Forest", rf_model, train_df, test_df),
-        REPORTS_DIR,
-    )
+    # # 5. Train Random Forest
+    # rf_model = train_random_forest(
+    #     train_df, preprocessing_stages, use_cv=USE_CV_RF
+    # )
+    # save_model(rf_model, MODELS_DIR / "rf")
+    # _evaluate_and_log("Random Forest", rf_model, test_df, METRICS_PATH)
+    # save_model_metrics(
+    #     "Random Forest",
+    #     evaluate_model("Random Forest", rf_model, train_df, test_df),
+    #     REPORTS_DIR,
+    # )
 
     # # 6. Train Gradient-Boosted Trees
     gbt_model = train_gbt(
