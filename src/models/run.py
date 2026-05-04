@@ -1,5 +1,6 @@
 from __future__ import annotations
 import os
+import time
 from pathlib import Path
 from pyspark.ml.evaluation import MulticlassClassificationEvaluator
 from src.config import MERGED_PARQUET, PROJECT_ROOT, get_spark
@@ -60,6 +61,7 @@ def main() -> None:
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
 
     spark = get_spark("road-accidents-training")
+    wall_start = time.time()
     _write_metrics_header(METRICS_PATH)
 
     # 1. Load & clean raw data
