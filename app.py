@@ -212,6 +212,15 @@ def load_eda_report() -> dict | None:
     return report
 
 
+@st.cache_data(show_spinner="Loading model metrics …")
+def load_model_metrics() -> dict | None:
+    path = ROOT / "reports" / "model_metrics.json"
+    if not path.exists():
+        return None
+    with open(path) as f:
+        return json.load(f)
+
+
 @st.cache_data(show_spinner="Sampling accident locations …")
 def load_geo_sample(n: int = 40_000) -> pd.DataFrame | None:
     if not PARQUET.exists():
@@ -521,6 +530,121 @@ def fig_location_density(loc: dict) -> go.Figure:
     return fig
 
 
+def fig_metric_comparison(models_data: dict) -> go.Figure:
+    """Grouped bar chart: accuracy, weighted F1, Cohen's κ — train (light) vs test (solid)."""
+    models = list(models_data.keys())
+    metrics = [
+        ("accuracy",    "Accuracy",     C_TEAL),
+        ("weighted_f1", "Weighted F1",  C_BLUE),
+        ("cohen_kappa", "Cohen's κ",    C_ORANGE),
+    ]
+    fig = go.Figure()
+    for key, label, color in metrics:
+        train_vals = [models_data[m].get("train", {}).get(key, 0) for m in models]
+        test_vals  = [models_data[m].get("test",  {}).get(key, 0) for m in models]
+        fig.add_trace(go.Bar(
+            name=f"{label} — Train", x=models, y=train_vals,
+            marker_color=color, marker_opacity=0.4, marker_line_width=0,
+            hovertemplate=f"<b>%{{x}}</b><br>{label} (Train): %{{y:.4f}}<extra></extra>",
+        ))
+        fig.add_trace(go.Bar(
+            name=f"{label} — Test", x=models, y=test_vals,
+            marker_color=color, marker_line_width=0,
+            hovertemplate=f"<b>%{{x}}</b><br>{label} (Test): %{{y:.4f}}<extra></extra>",
+        ))
+    fig.update_layout(
+        **PLOTLY_LAYOUT,
+        barmode="group",
+        xaxis=dict(showgrid=False, zeroline=False,
+                   tickfont=dict(color="#2c3e50", size=11)),
+        yaxis=dict(gridcolor="#dde1e5", zeroline=False, range=[0, 1.08],
+                   tickformat=".0%", tickfont=dict(color="#2c3e50", size=11)),
+        legend=dict(orientation="h", yanchor="top", y=-0.18,
+                    xanchor="center", x=0.5,
+                    font=dict(size=10), bgcolor="rgba(255,255,255,0)"),
+        bargap=0.2, bargroupgap=0.05,
+        height=320,
+        margin=dict(l=8, r=8, t=8, b=8),
+    )
+    return fig
+
+
+def fig_confusion_matrix(model_data: dict, split: str = "test") -> go.Figure:
+    """Row-normalised confusion matrix heatmap annotated with count + %."""
+    sd     = model_data.get(split, {})
+    conf   = sd.get("confusion_matrix", [])
+    labels = sd.get("class_labels", ["Slight", "Serious", "Fatal"])
+    if not conf:
+        return go.Figure()
+
+    arr  = np.array(conf, dtype=float)
+    rows = arr.sum(axis=1, keepdims=True)
+    norm = arr / np.where(rows == 0, 1, rows)
+
+    text = [
+        [f"{int(arr[i, j]):,}<br>({norm[i, j]:.1%})" for j in range(len(labels))]
+        for i in range(len(labels))
+    ]
+    fig = go.Figure(go.Heatmap(
+        z=norm,
+        x=[f"Pred: {l}" for l in labels],
+        y=[f"Actual: {l}" for l in labels],
+        text=text,
+        texttemplate="%{text}",
+        textfont=dict(size=11, color="white"),
+        colorscale=[[0, "#eaf4fb"], [0.4, "#3498db"], [1, "#1a5276"]],
+        showscale=True,
+        colorbar=dict(tickformat=".0%", thickness=12, len=0.85),
+        hovertemplate="Actual: %{y}<br>Predicted: %{x}<br>%{text}<extra></extra>",
+    ))
+    fig.update_layout(
+        **PLOTLY_LAYOUT,
+        xaxis=dict(side="bottom", tickfont=dict(color="#2c3e50", size=11)),
+        yaxis=dict(autorange="reversed", tickfont=dict(color="#2c3e50", size=11)),
+        height=310,
+        margin=dict(l=8, r=8, t=8, b=8),
+    )
+    return fig
+
+
+def fig_per_class_metrics(model_data: dict, split: str = "test") -> go.Figure:
+    """Grouped bar: precision / recall / F1 per class on the chosen split."""
+    sd        = model_data.get(split, {})
+    per_class = sd.get("per_class", {})
+    labels    = sd.get("class_labels", ["Slight", "Serious", "Fatal"])
+
+    fig = go.Figure()
+    for m_key, m_label, color in [
+        ("precision", "Precision", C_TEAL),
+        ("recall",    "Recall",    C_BLUE),
+        ("f1",        "F1",        C_ORANGE),
+    ]:
+        vals = [per_class.get(lbl, {}).get(m_key, 0) for lbl in labels]
+        fig.add_trace(go.Bar(
+            name=m_label, x=labels, y=vals,
+            marker_color=color, marker_line_width=0,
+            text=[f"{v:.3f}" for v in vals],
+            textposition="outside",
+            textfont=dict(size=10),
+            hovertemplate=f"<b>%{{x}}</b><br>{m_label}: %{{y:.4f}}<extra></extra>",
+        ))
+    fig.update_layout(
+        **PLOTLY_LAYOUT,
+        barmode="group",
+        xaxis=dict(showgrid=False, zeroline=False,
+                   tickfont=dict(color="#2c3e50", size=11)),
+        yaxis=dict(gridcolor="#dde1e5", zeroline=False, range=[0, 1.18],
+                   tickformat=".0%", tickfont=dict(color="#2c3e50", size=11)),
+        legend=dict(orientation="h", yanchor="top", y=-0.18,
+                    xanchor="center", x=0.5,
+                    font=dict(size=11), bgcolor="rgba(255,255,255,0)"),
+        bargap=0.28, bargroupgap=0.06,
+        height=310,
+        margin=dict(l=8, r=8, t=8, b=8),
+    )
+    return fig
+
+
 def fig_uk_map(geo: pd.DataFrame) -> go.Figure:
     sev_map = {
         "Fatal":   dict(color=C_CORAL,   size=5,  opacity=0.85),
@@ -722,6 +846,97 @@ def main() -> None:
         st.plotly_chart(fig_uk_map(geo), use_container_width=True,
                         config={"displayModeBar": False}, key="map")
         st.markdown('</div>', unsafe_allow_html=True)
+
+    # ── Row 4: Model Evaluation ──────────────────────────────────────────────
+    model_metrics = load_model_metrics()
+    if model_metrics:
+        models_data = model_metrics.get("models", {})
+        gen_at      = model_metrics.get("generated_at", "")[:16].replace("T", " ")
+
+        st.markdown("<div style='height:0.2rem'></div>", unsafe_allow_html=True)
+        st.markdown(
+            f'<p class="section-label">Model Evaluation &nbsp;'
+            f'<span style="font-weight:400;text-transform:none;'
+            f'letter-spacing:0;font-size:0.6rem;color:{C_MID};">'
+            f'generated {gen_at}</span></p>',
+            unsafe_allow_html=True,
+        )
+
+        model_names = list(models_data.keys())
+
+        # Render one block per model (tabs when multiple models are present)
+        if len(model_names) > 1:
+            tab_contexts = st.tabs(model_names)
+        else:
+            tab_contexts = [st.container()]
+
+        for tab_ctx, model_name in zip(tab_contexts, model_names):
+            with tab_ctx:
+                mdata  = models_data[model_name]
+                test_d = mdata.get("test",  {})
+                trn_d  = mdata.get("train", {})
+
+                # ── KPI row: 3 test metrics + 3 train metrics ─────────────
+                mk1, mk2, mk3, mk4, mk5, mk6 = st.columns(6)
+                mk1.markdown(kpi_card(
+                    "Train Accuracy", f"{trn_d.get('accuracy', 0):.2%}",
+                    "training set", "neu", C_BLUE), unsafe_allow_html=True)
+                mk2.markdown(kpi_card(
+                    "Test Accuracy", f"{test_d.get('accuracy', 0):.2%}",
+                    "held-out test set", "neu", C_TEAL), unsafe_allow_html=True)
+                mk3.markdown(kpi_card(
+                    "Train Weighted F1", f"{trn_d.get('weighted_f1', 0):.4f}",
+                    "training set", "neu", C_BLUE), unsafe_allow_html=True)
+                mk4.markdown(kpi_card(
+                    "Test Weighted F1", f"{test_d.get('weighted_f1', 0):.4f}",
+                    "held-out test set", "neu", C_TEAL), unsafe_allow_html=True)
+                mk5.markdown(kpi_card(
+                    "Train Cohen's κ", f"{trn_d.get('cohen_kappa', 0):.4f}",
+                    "training set", "neu", C_BLUE), unsafe_allow_html=True)
+                mk6.markdown(kpi_card(
+                    "Test Cohen's κ", f"{test_d.get('cohen_kappa', 0):.4f}",
+                    "held-out test set", "neu", C_TEAL), unsafe_allow_html=True)
+
+                st.markdown("<div style='height:0.25rem'></div>", unsafe_allow_html=True)
+
+                # ── Charts row: metric bar | confusion matrix ─────────────
+                mc1, mgap, mc2 = st.columns([1.1, 0.04, 1])
+                with mc1:
+                    st.markdown(
+                        '<div class="chart-card">'
+                        '<p class="chart-title">Train vs Test — All Metrics</p></div>',
+                        unsafe_allow_html=True)
+                    st.plotly_chart(
+                        fig_metric_comparison(models_data),
+                        use_container_width=True,
+                        config={"displayModeBar": False},
+                        key=f"metric_bar_{model_name}",
+                    )
+                with mc2:
+                    st.markdown(
+                        '<div class="chart-card">'
+                        '<p class="chart-title">Confusion Matrix — Test Set</p></div>',
+                        unsafe_allow_html=True)
+                    st.plotly_chart(
+                        fig_confusion_matrix(mdata),
+                        use_container_width=True,
+                        config={"displayModeBar": False},
+                        key=f"conf_matrix_{model_name}",
+                    )
+
+                st.markdown("<div style='height:0.2rem'></div>", unsafe_allow_html=True)
+
+                # ── Per-class bar (full width) ────────────────────────────
+                st.markdown(
+                    '<div class="chart-card">'
+                    '<p class="chart-title">Per-Class Precision / Recall / F1 — Test Set</p></div>',
+                    unsafe_allow_html=True)
+                st.plotly_chart(
+                    fig_per_class_metrics(mdata),
+                    use_container_width=True,
+                    config={"displayModeBar": False},
+                    key=f"per_class_{model_name}",
+                )
 
     # ── Footer ───────────────────────────────────────────────────────────────
     st.markdown(f"""
