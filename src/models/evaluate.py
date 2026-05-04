@@ -61,10 +61,11 @@ def evaluate_model(model_name: str, model, train_df, test_df) -> dict:
         per_class: dict = {}
         weighted_f1 = 0.0
         for idx in sorted(_LABEL_MAP):
+            int_idx = int(idx)
             lbl = _LABEL_MAP[idx]
-            tp = conf_arr[idx, idx]
-            fp = conf_arr[:, idx].sum() - tp
-            fn = conf_arr[idx, :].sum() - tp
+            tp = conf_arr[int_idx, int_idx]
+            fp = conf_arr[:, int_idx].sum() - tp
+            fn = conf_arr[int_idx, :].sum() - tp
             
             precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
             recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
@@ -76,7 +77,7 @@ def evaluate_model(model_name: str, model, train_df, test_df) -> dict:
                 "f1":        round(float(f1), 4),
             }
             # Weight by label frequency in test set
-            label_weight = (conf_arr[idx, :].sum()) / total if total > 0 else 0.0
+            label_weight = (conf_arr[int_idx, :].sum()) / total if total > 0 else 0.0
             weighted_f1 += f1 * label_weight
 
         split_results[split_name] = {

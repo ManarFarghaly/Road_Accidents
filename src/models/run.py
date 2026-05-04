@@ -102,16 +102,16 @@ def main() -> None:
     )
 
     # # 6. Train Gradient-Boosted Trees
-    # gbt_model = train_gbt(
-    #     train_df, preprocessing_stages, use_cv=USE_CV_GBT
-    # )
-    # save_model(gbt_model, MODELS_DIR / "gbt")
-    # _evaluate_and_log("GBT", gbt_model, test_df, METRICS_PATH)
-    # save_model_metrics(
-    #     "GBT",
-    #     evaluate_model("GBT", gbt_model, train_df, test_df),
-    #     REPORTS_DIR,
-    # )
+    gbt_model = train_gbt(
+        train_df, preprocessing_stages, use_cv=USE_CV_GBT
+    )
+    save_model(gbt_model, MODELS_DIR / "gbt")
+    _evaluate_and_log("GBT", gbt_model, test_df, METRICS_PATH)
+    save_model_metrics(
+        "GBT",
+        evaluate_model("GBT", gbt_model, train_df, test_df),
+        REPORTS_DIR,
+    )
 
     # 8. Persist test split
     test_path = Path("data/processed/test.parquet")
