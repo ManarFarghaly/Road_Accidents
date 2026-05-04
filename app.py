@@ -486,41 +486,6 @@ def fig_weather(weather: dict) -> go.Figure:
     return fig
 
 
-def fig_location_density(loc: dict) -> go.Figure:
-    by_density = loc.get("by_density", {})
-    rows = pd.DataFrame([
-        {"density": k.title(), "count": v["count"], "avg_casualties": v["avg_casualties"]}
-        for k, v in by_density.items()
-        if v["count"] > 0 and k != "unknown"
-    ]).sort_values("count", ascending=False)
-
-    pal = {"Urban": C_CORAL, "Suburban": C_ORANGE, "Rural": C_TEAL}
-
-    fig = go.Figure(go.Bar(
-        x=rows["density"],
-        y=rows["count"],
-        marker_color=[pal.get(d, C_MID) for d in rows["density"]],
-        marker_line_width=0,
-        text=[f"{v:,.0f}" for v in rows["count"]],
-        textposition="outside",
-        textfont=dict(size=10),
-        hovertemplate="<b>%{x}</b><br>%{y:,} accidents<br>Avg casualties: %{customdata:.2f}<extra></extra>",
-        customdata=rows["avg_casualties"],
-    ))
-    fig.update_layout(
-        **PLOTLY_LAYOUT,
-        xaxis=dict(showgrid=False, zeroline=False,
-                   tickfont=dict(color="#2c3e50", size=11)),
-        yaxis=dict(gridcolor="#dde1e5", zeroline=False,
-                   tickfont=dict(color="#2c3e50", size=11)),
-        showlegend=False,
-        bargap=0.38,
-        height=320,
-        margin=dict(l=8, r=8, t=8, b=8),
-    )
-    return fig
-
-
 def fig_uk_map(geo: pd.DataFrame) -> go.Figure:
     sev_map = {
         "Fatal":   dict(color=C_CORAL,   size=5,  opacity=0.85),
@@ -605,7 +570,6 @@ def main() -> None:
     sev   = report.get("severity_distribution", {})
     temp  = report.get("temporal_patterns", {})
     wx    = report.get("weather_analysis", {})
-    loc   = report.get("location_analysis", {})
     shape = report.get("dataset_shape", {})
 
     # Pre-compute KPIs
@@ -688,10 +652,10 @@ def main() -> None:
 
     st.markdown("<div style='height:0.2rem'></div>", unsafe_allow_html=True)
 
-    # ── Row 3: Weather | Location density | Map ───────────────────────────────
+    # ── Row 3: Weather | Map ──────────────────────────────────────────────────
     st.markdown('<p class="section-label">Risk Factors & Geography</p>',
                 unsafe_allow_html=True)
-    c4, gap3, c5, gap4, c6 = st.columns([1.5, 0.04, 0.85, 0.04, 1.4])
+    c4, gap3, c6 = st.columns([1.6, 0.05, 1.35])
 
     with c4:
         st.markdown('<div class="chart-card"><p class="chart-title">Avg Casualties by Weather Condition</p>', unsafe_allow_html=True)
@@ -703,18 +667,6 @@ def main() -> None:
         st.markdown('</div>', unsafe_allow_html=True)
 
     with gap3:
-        st.empty()
-
-    with c5:
-        st.markdown('<div class="chart-card"><p class="chart-title">Location Density</p>', unsafe_allow_html=True)
-        if loc.get("by_density"):
-            st.plotly_chart(fig_location_density(loc), use_container_width=True,
-                            config={"displayModeBar": False}, key="density")
-        else:
-            st.info("Location density data not available.")
-        st.markdown('</div>', unsafe_allow_html=True)
-
-    with gap4:
         st.empty()
 
     with c6:

@@ -264,6 +264,14 @@ def clean(df: DataFrame) -> DataFrame:
     ]
     if to_drop:
         df = df.drop(*to_drop)
+
+    # Normalize weather column variants from different ingestion snapshots.
+    # Some datasets use temp/snwd, while preprocessing expects tavg/snow.
+    if "tavg" not in df.columns and "temp" in df.columns:
+        df = df.withColumn("tavg", F.col("`temp`").cast("double"))
+    if "snow" not in df.columns and "snwd" in df.columns:
+        df = df.withColumn("snow", F.col("`snwd`").cast("double"))
+
     # ── Rename columns with special characters in their names ────────────
     # Dots in column names cause AnalysisException throughout Spark ML.
     # Rename once here so all downstream stages see clean names.

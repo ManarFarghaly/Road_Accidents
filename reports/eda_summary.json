@@ -1,0 +1,451 @@
+{
+  "dataset_shape": {
+    "total_rows": 2715940,
+    "total_columns": 68
+  },
+  "null_statistics": {
+    "1st_Road_Number": {
+      "null_count": 2,
+      "null_percentage": 0.0
+    },
+    "2nd_Road_Number": {
+      "null_count": 23822,
+      "null_percentage": 0.88
+    },
+    "Latitude": {
+      "null_count": 215,
+      "null_percentage": 0.01
+    },
+    "Location_Easting_OSGR": {
+      "null_count": 205,
+      "null_percentage": 0.01
+    },
+    "Location_Northing_OSGR": {
+      "null_count": 205,
+      "null_percentage": 0.01
+    },
+    "Longitude": {
+      "null_count": 216,
+      "null_percentage": 0.01
+    },
+    "LSOA_of_Accident_Location": {
+      "null_count": 186402,
+      "null_percentage": 6.86
+    },
+    "Speed_limit": {
+      "null_count": 65,
+      "null_percentage": 0.0
+    },
+    "Time": {
+      "null_count": 201,
+      "null_percentage": 0.01
+    },
+    "station_id": {
+      "null_count": 216,
+      "null_percentage": 0.01
+    },
+    "temp": {
+      "null_count": 1325180,
+      "null_percentage": 48.79
+    },
+    "tmin": {
+      "null_count": 1542421,
+      "null_percentage": 56.79
+    },
+    "tmax": {
+      "null_count": 1540230,
+      "null_percentage": 56.71
+    },
+    "prcp": {
+      "null_count": 2566456,
+      "null_percentage": 94.5
+    },
+    "snwd": {
+      "null_count": 2680957,
+      "null_percentage": 98.71
+    },
+    "wspd": {
+      "null_count": 1403914,
+      "null_percentage": 51.69
+    },
+    "pres": {
+      "null_count": 2006353,
+      "null_percentage": 73.87
+    },
+    "rhum": {
+      "null_count": 1342075,
+      "null_percentage": 49.41
+    },
+    "wpgt": {
+      "null_count": 2715940,
+      "null_percentage": 100.0
+    },
+    "tsun": {
+      "null_count": 2715940,
+      "null_percentage": 100.0
+    },
+    "cldc": {
+      "null_count": 2324491,
+      "null_percentage": 85.59
+    },
+    "Age_Band_of_Driver": {
+      "null_count": 657532,
+      "null_percentage": 24.21
+    },
+    "Age_of_Vehicle": {
+      "null_count": 995494,
+      "null_percentage": 36.65
+    },
+    "Driver_Home_Area_Type": {
+      "null_count": 657532,
+      "null_percentage": 24.21
+    },
+    "Driver_IMD_Decile": {
+      "null_count": 1346822,
+      "null_percentage": 49.59
+    },
+    "Engine_Capacity_.CC.": {
+      "null_count": 907849,
+      "null_percentage": 33.43
+    },
+    "Hit_Object_in_Carriageway": {
+      "null_count": 657532,
+      "null_percentage": 24.21
+    },
+    "Hit_Object_off_Carriageway": {
+      "null_count": 657532,
+      "null_percentage": 24.21
+    },
+    "Journey_Purpose_of_Driver": {
+      "null_count": 657532,
+      "null_percentage": 24.21
+    },
+    "Junction_Location": {
+      "null_count": 657532,
+      "null_percentage": 24.21
+    },
+    "make": {
+      "null_count": 657532,
+      "null_percentage": 24.21
+    },
+    "model": {
+      "null_count": 846044,
+      "null_percentage": 31.15
+    },
+    "Propulsion_Code": {
+      "null_count": 657532,
+      "null_percentage": 24.21
+    },
+    "Sex_of_Driver": {
+      "null_count": 657532,
+      "null_percentage": 24.21
+    },
+    "Skidding_and_Overturning": {
+      "null_count": 657532,
+      "null_percentage": 24.21
+    },
+    "Towing_and_Articulation": {
+      "null_count": 657532,
+      "null_percentage": 24.21
+    },
+    "Vehicle_Leaving_Carriageway": {
+      "null_count": 657532,
+      "null_percentage": 24.21
+    },
+    "Vehicle_Location.Restricted_Lane": {
+      "null_count": 658656,
+      "null_percentage": 24.25
+    },
+    "Vehicle_Manoeuvre": {
+      "null_count": 657532,
+      "null_percentage": 24.21
+    },
+    "Vehicle_Reference": {
+      "null_count": 657532,
+      "null_percentage": 24.21
+    },
+    "Vehicle_Type": {
+      "null_count": 657532,
+      "null_percentage": 24.21
+    },
+    "Was_Vehicle_Left_Hand_Drive": {
+      "null_count": 657532,
+      "null_percentage": 24.21
+    },
+    "X1st_Point_of_Impact": {
+      "null_count": 657532,
+      "null_percentage": 24.21
+    }
+  },
+  "numeric_statistics": {
+    "1st_Road_Number": {
+      "min": null,
+      "max": 9999.0,
+      "mean": 983.29,
+      "stddev": 1797.22
+    },
+    "2nd_Road_Number": {
+      "min": null,
+      "max": 9999.0,
+      "mean": 374.08,
+      "stddev": 1289.1
+    },
+    "Latitude": {
+      "min": 49.912941,
+      "max": 60.757544,
+      "mean": 52.55,
+      "stddev": 1.44
+    },
+    "Location_Easting_OSGR": {
+      "min": 64950.0,
+      "max": 655540.0,
+      "mean": 441844.99,
+      "stddev": 95229.67
+    },
+    "Location_Northing_OSGR": {
+      "min": 10290.0,
+      "max": 1208800.0,
+      "mean": 295880.06,
+      "stddev": 159581.07
+    },
+    "Longitude": {
+      "min": -7.516225,
+      "max": 1.76201,
+      "mean": -1.4,
+      "stddev": 1.4
+    },
+    "Number_of_Casualties": {
+      "min": 1.0,
+      "max": 93.0,
+      "mean": 1.41,
+      "stddev": 0.97
+    },
+    "Number_of_Vehicles": {
+      "min": 1.0,
+      "max": 67.0,
+      "mean": 2.01,
+      "stddev": 0.92
+    },
+    "Speed_limit": {
+      "min": null,
+      "max": 70.0,
+      "mean": 39.35,
+      "stddev": 14.43
+    },
+    "temp": {
+      "min": -13.199999809265137,
+      "max": 27.899999618530273,
+      "mean": 10.66,
+      "stddev": 5.25
+    },
+    "tmin": {
+      "min": -24.200000762939453,
+      "max": 26.100000381469727,
+      "mean": 7.12,
+      "stddev": 5.2
+    },
+    "tmax": {
+      "min": -8.0,
+      "max": 36.70000076293945,
+      "mean": 14.22,
+      "stddev": 5.88
+    },
+    "prcp": {
+      "min": null,
+      "max": 221.5,
+      "mean": 2.01,
+      "stddev": 4.44
+    },
+    "snwd": {
+      "min": null,
+      "max": 133.0,
+      "mean": 0.62,
+      "stddev": 6.75
+    },
+    "wspd": {
+      "min": null,
+      "max": 90.9000015258789,
+      "mean": 15.54,
+      "stddev": 7.25
+    },
+    "pres": {
+      "min": 955.2000122070312,
+      "max": 1044.199951171875,
+      "mean": 1014.84,
+      "stddev": 10.78
+    },
+    "rhum": {
+      "min": 4.0,
+      "max": 100.0,
+      "mean": 79.99,
+      "stddev": 9.81
+    },
+    "wpgt": {
+      "min": null,
+      "max": null,
+      "mean": null,
+      "stddev": null
+    },
+    "tsun": {
+      "min": null,
+      "max": null,
+      "mean": null,
+      "stddev": null
+    },
+    "cldc": {
+      "min": null,
+      "max": 8.0,
+      "mean": 5.09,
+      "stddev": 1.8
+    },
+    "Age_of_Vehicle": {
+      "min": 1.0,
+      "max": 111.0,
+      "mean": 7.14,
+      "stddev": 4.73
+    },
+    "Driver_IMD_Decile": {
+      "min": 1.0,
+      "max": 10.0,
+      "mean": 5.39,
+      "stddev": 2.82
+    },
+    "Engine_Capacity_.CC.": {
+      "min": 1.0,
+      "max": 96000.0,
+      "mean": 2028.29,
+      "stddev": 1914.15
+    },
+    "Vehicle_Location.Restricted_Lane": {
+      "min": null,
+      "max": 9.0,
+      "mean": 0.11,
+      "stddev": 0.89
+    },
+    "Vehicle_Reference": {
+      "min": 1.0,
+      "max": 91.0,
+      "mean": 1.55,
+      "stddev": 0.78
+    },
+    "Year": {
+      "min": 2005.0,
+      "max": 2017.0,
+      "mean": 2010.95,
+      "stddev": 3.7
+    }
+  },
+  "severity_distribution": {
+    "Fatal": {
+      "count": 35480,
+      "percentage": 1.31,
+      "avg_casualties": 2.05,
+      "avg_vehicles": 2.16
+    },
+    "Slight": {
+      "count": 2315841,
+      "percentage": 85.27,
+      "avg_casualties": 1.38,
+      "avg_vehicles": 2.02
+    },
+    "Serious": {
+      "count": 364619,
+      "percentage": 13.43,
+      "avg_casualties": 1.55,
+      "avg_vehicles": 1.9
+    }
+  },
+  "weather_analysis": {
+    "Fine no high winds": {
+      "count": 2184146,
+      "avg_casualties": 1.4,
+      "total_accidents": 1640095
+    },
+    "Raining no high winds": {
+      "count": 315288,
+      "avg_casualties": 1.45,
+      "total_accidents": 239281
+    },
+    "Other": {
+      "count": 56299,
+      "avg_casualties": 1.4,
+      "total_accidents": 44083
+    },
+    "Unknown": {
+      "count": 53730,
+      "avg_casualties": 1.26,
+      "total_accidents": 42521
+    },
+    "Raining + high winds": {
+      "count": 36774,
+      "avg_casualties": 1.46,
+      "total_accidents": 28343
+    },
+    "Fine + high winds": {
+      "count": 33820,
+      "avg_casualties": 1.43,
+      "total_accidents": 25816
+    },
+    "Snowing no high winds": {
+      "count": 17564,
+      "avg_casualties": 1.4,
+      "total_accidents": 13387
+    },
+    "Fog or mist": {
+      "count": 14726,
+      "avg_casualties": 1.87,
+      "total_accidents": 11068
+    },
+    "Snowing + high winds": {
+      "count": 3366,
+      "avg_casualties": 1.53,
+      "total_accidents": 2487
+    },
+    "Data missing or out of range": {
+      "count": 227,
+      "avg_casualties": 1.49,
+      "total_accidents": 175
+    }
+  },
+  "temporal_patterns": {
+    "hourly": {
+      "0": 37660,
+      "1": 27236,
+      "2": 21202,
+      "3": 17433,
+      "4": 13806,
+      "5": 21385,
+      "6": 48973,
+      "7": 118670,
+      "8": 200756,
+      "9": 136481,
+      "10": 125103,
+      "11": 143865,
+      "12": 163118,
+      "13": 167528,
+      "14": 168451,
+      "15": 208046,
+      "16": 223722,
+      "17": 246170,
+      "18": 188836,
+      "19": 138097,
+      "20": 99625,
+      "21": 78681,
+      "22": 68146,
+      "23": 52749
+    },
+    "day_of_week": {
+      "Tuesday": 408664,
+      "Sunday": 293151,
+      "Friday": 448047,
+      "Saturday": 356389,
+      "Thursday": 411670,
+      "Monday": 386582,
+      "Wednesday": 411437
+    }
+  },
+  "location_analysis": {
+    "by_density": {},
+    "by_cluster": {}
+  }
+}

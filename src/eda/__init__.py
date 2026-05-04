@@ -14,6 +14,11 @@ import json
 from typing import Dict, List, Tuple, Optional
 
 
+def _c(name: str):
+    """Return a safely-escaped Spark column reference."""
+    return F.col(f"`{name}`")
+
+
 def generate_severity_aggregations(df) -> Dict:
     """
     Aggregate accident statistics by severity level.
@@ -58,7 +63,7 @@ def generate_weather_aggregations(df) -> Dict:
     weather_stats = df.groupby('Weather_Conditions').agg(
         F.count('*').alias('count'),
         F.mean('Number_of_Casualties').alias('avg_casualties'),
-        F.countDistinct('Accident_Index').alias('unique_accidents')
+        F.count_distinct('Accident_Index').alias('unique_accidents')
     ).orderBy(F.col('count').desc()).collect()
     
     result = {}
@@ -89,7 +94,7 @@ def generate_temporal_aggregations(df) -> Dict:
     df_temporal = df_temporal.withColumn('Month', F.month(F.col('Date')))
     
     # Hourly distribution
-    hourly = df_temporal.groupby('Hour').agg(
+    hourly = df_temporal.filter(_c('Hour').isNotNull()).groupby('Hour').agg(
         F.count('*').alias('count')
     ).orderBy('Hour').collect()
     
@@ -97,7 +102,7 @@ def generate_temporal_aggregations(df) -> Dict:
     
     # Day of week distribution
     dow_names = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
-    dow_dist = df_temporal.groupby('DayOfWeek').agg(
+    dow_dist = df_temporal.filter(_c('DayOfWeek').isNotNull()).groupby('DayOfWeek').agg(
         F.count('*').alias('count')
     ).collect()
     
@@ -123,10 +128,17 @@ def generate_location_aggregations(df) -> Dict:
     Returns:
         Dict with location-based statistics
     """
+    # If the spatial features were not generated yet, return empty sections.
+    if "location_density" not in df.columns or "accident_hotspot_cluster" not in df.columns:
+        return {
+            'by_density': {},
+            'by_cluster': {},
+        }
+
     # Location density
     density_dist = df.groupby('location_density').agg(
         F.count('*').alias('count'),
-        F.mean('Number_of_Casualties').alias('avg_casualties')
+        F.mean(_c('Number_of_Casualties')).alias('avg_casualties')
     ).collect()
     
     density_dict = {}
@@ -140,7 +152,7 @@ def generate_location_aggregations(df) -> Dict:
     # Cluster distribution
     cluster_dist = df.groupby('accident_hotspot_cluster').agg(
         F.count('*').alias('count'),
-        F.mean('Number_of_Casualties').alias('avg_casualties')
+        F.mean(_c('Number_of_Casualties')).alias('avg_casualties')
     ).orderBy('accident_hotspot_cluster').collect()
     
     cluster_dict = {}
@@ -171,7 +183,7 @@ def get_null_statistics(df) -> Dict:
     null_stats = {}
     
     for col in df.columns:
-        null_count = df.filter(F.col(col).isNull()).count()
+        null_count = df.filter(_c(col).isNull()).count()
         null_pct = (null_count / total_rows) * 100 if total_rows > 0 else 0
         if null_pct > 0:
             null_stats[col] = {
@@ -199,10 +211,10 @@ def get_numeric_statistics(df) -> Dict:
     
     for col in numeric_cols:
         stats = df.agg(
-            F.min(col).alias('min'),
-            F.max(col).alias('max'),
-            F.mean(col).alias('mean'),
-            F.stddev(col).alias('stddev')
+            F.min(_c(col)).alias('min'),
+            F.max(_c(col)).alias('max'),
+            F.mean(_c(col)).alias('mean'),
+            F.stddev(_c(col)).alias('stddev')
         ).collect()[0]
         
         stats_dict[col] = {
