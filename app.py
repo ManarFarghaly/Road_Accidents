@@ -214,11 +214,25 @@ def load_eda_report() -> dict | None:
 
 @st.cache_data(show_spinner="Loading model metrics …")
 def load_model_metrics() -> dict | None:
-    path = ROOT / "reports" / "model_metrics.json"
-    if not path.exists():
+    """
+    Globs all reports/metrics_*.json files (one per model) and merges them.
+    Missing models are simply absent — re-running one model never overwrites
+    the stored results of the others.
+    """
+    files = sorted((ROOT / "reports").glob("metrics_*.json"))
+    if not files:
         return None
-    with open(path) as f:
-        return json.load(f)
+    models: dict = {}
+    latest_ts = ""
+    for f in files:
+        with open(f) as fp:
+            data = json.load(fp)
+        name = data.get("model_name", f.stem.replace("metrics_", ""))
+        ts   = data.get("generated_at", "")
+        if ts > latest_ts:
+            latest_ts = ts
+        models[name] = {"train": data.get("train", {}), "test": data.get("test", {})}
+    return {"generated_at": latest_ts, "models": models}
 
 
 @st.cache_data(show_spinner="Sampling accident locations …")

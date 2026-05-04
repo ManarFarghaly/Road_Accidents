@@ -8,13 +8,12 @@ from src.preprocessing import build_preprocessing_stages, clean
 from src.preprocessing.run import fit_and_apply_target_encodings
 from src.models.train import train_gbt, train_logistic_regression, train_random_forest
 from src.models.save_load import save_model
-from src.models.evaluate import evaluate_model, save_metrics_json, make_results_container
+from src.models.evaluate import evaluate_model, save_model_metrics
 
 
-MODELS_DIR         = PROJECT_ROOT / "models"
-REPORTS_DIR        = PROJECT_ROOT / "reports"
-METRICS_PATH       = MODELS_DIR   / "metrics.txt"
-MODEL_METRICS_JSON = REPORTS_DIR  / "model_metrics.json"
+MODELS_DIR   = PROJECT_ROOT / "models"
+REPORTS_DIR  = PROJECT_ROOT / "reports"
+METRICS_PATH = MODELS_DIR   / "metrics.txt"
 
 USE_CV_LR  = os.getenv("USE_CV_LR",  "true").lower()  == "true"
 USE_CV_RF  = os.getenv("USE_CV_RF",  "true").lower()  == "true"
@@ -78,16 +77,16 @@ def main() -> None:
     # 3. Shared preprocessing stages (fit inside each Pipeline)
     preprocessing_stages = build_preprocessing_stages()
 
-    all_results = make_results_container()
-
     # # 4. Train Logistic Regression (Baseline)
     # lr_model = train_logistic_regression(
     #     train_df, preprocessing_stages, use_cv=USE_CV_LR
     # )
     # save_model(lr_model, MODELS_DIR / "lr")
     # _evaluate_and_log("Logistic Regression", lr_model, test_df, METRICS_PATH)
-    # all_results["models"]["Logistic Regression"] = evaluate_model(
-    #     "Logistic Regression", lr_model, train_df, test_df
+    # save_model_metrics(
+    #     "Logistic Regression",
+    #     evaluate_model("Logistic Regression", lr_model, train_df, test_df),
+    #     REPORTS_DIR,
     # )
 
     # # 5. Train Random Forest
@@ -96,8 +95,10 @@ def main() -> None:
     # )
     # save_model(rf_model, MODELS_DIR / "rf")
     # _evaluate_and_log("Random Forest", rf_model, test_df, METRICS_PATH)
-    # all_results["models"]["Random Forest"] = evaluate_model(
-    #     "Random Forest", rf_model, train_df, test_df
+    # save_model_metrics(
+    #     "Random Forest",
+    #     evaluate_model("Random Forest", rf_model, train_df, test_df),
+    #     REPORTS_DIR,
     # )
 
     # 6. Train Gradient-Boosted Trees
@@ -106,10 +107,11 @@ def main() -> None:
     )
     save_model(gbt_model, MODELS_DIR / "gbt")
     _evaluate_and_log("GBT", gbt_model, test_df, METRICS_PATH)
-    all_results["models"]["GBT"] = evaluate_model("GBT", gbt_model, train_df, test_df)
-
-    # 7. Save full metrics JSON for the dashboard
-    save_metrics_json(all_results, MODEL_METRICS_JSON)
+    save_model_metrics(
+        "GBT",
+        evaluate_model("GBT", gbt_model, train_df, test_df),
+        REPORTS_DIR,
+    )
 
     # 8. Persist test split
     test_path = Path("data/processed/test.parquet")

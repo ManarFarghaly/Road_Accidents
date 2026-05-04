@@ -82,13 +82,18 @@ def evaluate_model(model_name: str, model, train_df, test_df) -> dict:
     return split_results
 
 
-def save_metrics_json(all_results: dict, path: Path) -> None:
-    """Write the full metrics dict to a JSON file, creating parent dirs as needed."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(all_results, indent=2), encoding="utf-8")
-    print(f"[evaluate] metrics saved → {path}")
-
-
-def make_results_container() -> dict:
-    """Return an empty results dict with a timestamp."""
-    return {"generated_at": datetime.now().isoformat(), "models": {}}
+def save_model_metrics(model_name: str, split_results: dict, reports_dir: Path) -> None:
+    """
+    Save one model's metrics to reports/metrics_{model_name}.json.
+    """
+    safe_name = model_name.replace(" ", "_")
+    path = reports_dir / f"metrics_{safe_name}.json"
+    reports_dir.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "model_name":    model_name,
+        "generated_at":  datetime.now().isoformat(),
+        "train":         split_results.get("train", {}),
+        "test":          split_results.get("test",  {}),
+    }
+    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    print(f"[evaluate] {model_name} metrics saved → {path}")
