@@ -358,3 +358,61 @@ def add_class_weights(
         condition = F.col(label_col) == cls
         expr = F.when(condition, w) if expr is None else expr.when(condition, w)
     return df.withColumn(weight_col, expr.otherwise(1.0))
+
+
+def balance_classes_to_ratio(
+    df: DataFrame,
+    label_col: str = "Accident_Severity",
+    seed: int = 42,
+    ratios: dict[str, float] | None = None,
+) -> DataFrame:
+    """
+    Downsample classes to a softer ratio relative to the smallest class.
+
+    Example with default ratios:
+      Fatal   -> 1x smallest class
+      Serious -> 3x smallest class
+      Slight  -> 5x smallest class
+
+    This keeps the training set more informative than forcing every class
+    all the way down to the Fatal count.
+    """
+    if ratios is None:
+        ratios = {"Fatal": 1.0, "Serious": 3.0, "Slight": 5.0}
+
+    counts = {
+        row[label_col]: row["count"]
+        for row in df.groupBy(label_col).count().collect()
+    }
+    if not counts:
+        return df
+
+    smallest_count = min(counts.values())
+    if smallest_count <= 0:
+        return df
+
+    target_counts = {
+        cls: min(counts.get(cls, 0), int(round(smallest_count * ratio)))
+        for cls, ratio in ratios.items()
+        if cls in counts
+    }
+
+    ranked = df.withColumn(
+        "_balance_row_number",
+        F.row_number().over(
+            Window.partitionBy(label_col).orderBy(F.rand(seed))
+        ),
+    )
+
+    keep_condition = None
+    for cls, target_count in target_counts.items():
+        class_condition = (
+            (F.col(label_col) == F.lit(cls))
+            & (F.col("_balance_row_number") <= F.lit(target_count))
+        )
+        keep_condition = class_condition if keep_condition is None else keep_condition | class_condition
+
+    if keep_condition is None:
+        return df
+
+    return ranked.filter(keep_condition).drop("_balance_row_number")

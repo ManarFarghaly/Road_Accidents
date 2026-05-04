@@ -5,6 +5,7 @@ from pathlib import Path
 from pyspark.ml.evaluation import MulticlassClassificationEvaluator
 from src.config import MERGED_PARQUET, PROJECT_ROOT, get_spark
 from src.preprocessing import build_preprocessing_stages, clean
+from src.preprocessing.clean import balance_classes_to_ratio
 from src.preprocessing.run import fit_and_apply_target_encodings
 from src.models.train import train_gbt, train_logistic_regression, train_random_forest
 from src.models.save_load import save_model
@@ -69,6 +70,7 @@ def main() -> None:
 
     # 2. Train / test split
     train_df, test_df = cleaned_df.randomSplit([0.8, 0.2], seed=42)
+    train_df = balance_classes_to_ratio(train_df)
     train_df, test_df = fit_and_apply_target_encodings(train_df, test_df, smoothing=10.0)
 
     # Cache training data — reused by all three trainers
@@ -77,29 +79,29 @@ def main() -> None:
     # 3. Shared preprocessing stages (fit inside each Pipeline)
     preprocessing_stages = build_preprocessing_stages()
 
-    # 4. Train Logistic Regression (Baseline)
-    lr_model = train_logistic_regression(
-        train_df, preprocessing_stages, use_cv=USE_CV_LR
-    )
-    save_model(lr_model, MODELS_DIR / "lr")
-    _evaluate_and_log("Logistic Regression", lr_model, test_df, METRICS_PATH)
-    save_model_metrics(
-        "Logistic Regression",
-        evaluate_model("Logistic Regression", lr_model, train_df, test_df),
-        REPORTS_DIR,
-    )
+    # # 4. Train Logistic Regression (Baseline)
+    # lr_model = train_logistic_regression(
+    #     train_df, preprocessing_stages, use_cv=USE_CV_LR
+    # )
+    # save_model(lr_model, MODELS_DIR / "lr")
+    # _evaluate_and_log("Logistic Regression", lr_model, test_df, METRICS_PATH)
+    # save_model_metrics(
+    #     "Logistic Regression",
+    #     evaluate_model("Logistic Regression", lr_model, train_df, test_df),
+    #     REPORTS_DIR,
+    # )
 
-    # 5. Train Random Forest
-    rf_model = train_random_forest(
-        train_df, preprocessing_stages, use_cv=USE_CV_RF
-    )
-    save_model(rf_model, MODELS_DIR / "rf")
-    _evaluate_and_log("Random Forest", rf_model, test_df, METRICS_PATH)
-    save_model_metrics(
-        "Random Forest",
-        evaluate_model("Random Forest", rf_model, train_df, test_df),
-        REPORTS_DIR,
-    )
+    # # 5. Train Random Forest
+    # rf_model = train_random_forest(
+    #     train_df, preprocessing_stages, use_cv=USE_CV_RF
+    # )
+    # save_model(rf_model, MODELS_DIR / "rf")
+    # _evaluate_and_log("Random Forest", rf_model, test_df, METRICS_PATH)
+    # save_model_metrics(
+    #     "Random Forest",
+    #     evaluate_model("Random Forest", rf_model, train_df, test_df),
+    #     REPORTS_DIR,
+    # )
 
     # 6. Train Gradient-Boosted Trees
     gbt_model = train_gbt(

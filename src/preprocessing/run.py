@@ -1,11 +1,18 @@
 from __future__ import annotations
 
+import socket
+
 from pyspark.ml import Pipeline
 from pyspark.sql import functions as F
 from pyspark.ml.feature import VectorAssembler
 
 from src.config import get_spark, MERGED_PARQUET, PROCESSED_DIR, INTERIM_DIR
-from src.preprocessing.clean import clean, compute_class_weights, add_class_weights
+from src.preprocessing.clean import (
+    clean,
+    compute_class_weights,
+    add_class_weights,
+    balance_classes_to_ratio,
+)
 from src.preprocessing.encode import build_encoding_stages_lr, build_encoding_stages_trees, fit_target_encoding, apply_target_encoding, fit_and_apply_target_encodings
 from src.preprocessing.scale import build_scaling_stages_for_lr, build_scaling_stages_for_trees
 from src.preprocessing.assemble import build_assembler_stage
@@ -84,6 +91,10 @@ def main():
 
     # ── 4. Rebalance training split only ──────────────────────────────────
     print("\n[4] Computing class weights on training split ...")
+    train_raw = balance_classes_to_ratio(train_raw)
+    print("    Rebalanced training split to a softer Fatal/Serious/Slight ratio.")
+    train_raw.groupBy("Accident_Severity").count().orderBy("Accident_Severity").show()
+
     weights = compute_class_weights(train_raw)
     print(f"    Weights: { {k: f'{v:.2f}' for k, v in weights.items()} }")
     train = add_class_weights(train_raw, weights)

@@ -1,4 +1,4 @@
 Road Accidents model evaluation results
 =======================================
 
-[GBT] Test accuracy = 0.8367, weighted-F1 = 0.7968
+[GBT] Test accuracy = 0.3792, weighted-F1 = 0.4383
