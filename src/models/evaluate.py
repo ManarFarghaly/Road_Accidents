@@ -4,7 +4,6 @@ from datetime import datetime
 from pathlib import Path
 
 import numpy as np
-from pyspark.mllib.evaluation import MulticlassMetrics
 
 
 # StringIndexer frequencyDesc on Accident_Severity:
@@ -44,31 +43,47 @@ def evaluate_model(model_name: str, model, train_df, test_df) -> dict:
     split_results: dict = {}
     for split_name, df in [("train", train_df), ("test", test_df)]:
         preds = model.transform(df)
-        pred_rdd = (
-            preds.select("prediction", "label")
-                 .rdd.map(lambda r: (float(r.prediction), float(r.label)))
-        )
-        mm       = MulticlassMetrics(pred_rdd)
-        conf_arr = mm.confusionMatrix().toArray()
-        conf     = conf_arr.tolist()
-
+        # Convert to pandas for reliable, in-memory computation
+        pred_label_df = preds.select("prediction", "label").toPandas()
+        predictions = pred_label_df["prediction"].astype(float).values
+        labels = pred_label_df["label"].astype(float).values
+        
+        # Compute confusion matrix manually
+        n_classes = 3
+        conf_arr = np.zeros((n_classes, n_classes), dtype=int)
+        for pred, label in zip(predictions, labels):
+            conf_arr[int(label), int(pred)] += 1
+        
+        # Compute metrics from confusion matrix
+        total = conf_arr.sum()
+        accuracy = np.diag(conf_arr).sum() / total if total > 0 else 0.0
+        
         per_class: dict = {}
+        weighted_f1 = 0.0
         for idx in sorted(_LABEL_MAP):
             lbl = _LABEL_MAP[idx]
-            try:
-                per_class[lbl] = {
-                    "precision": round(float(mm.precision(idx)), 4),
-                    "recall":    round(float(mm.recall(idx)),    4),
-                    "f1":        round(float(mm.fMeasure(idx)),  4),
-                }
-            except Exception:
-                per_class[lbl] = {"precision": 0.0, "recall": 0.0, "f1": 0.0}
+            tp = conf_arr[idx, idx]
+            fp = conf_arr[:, idx].sum() - tp
+            fn = conf_arr[idx, :].sum() - tp
+            
+            precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
+            recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
+            f1 = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0.0
+            
+            per_class[lbl] = {
+                "precision": round(float(precision), 4),
+                "recall":    round(float(recall), 4),
+                "f1":        round(float(f1), 4),
+            }
+            # Weight by label frequency in test set
+            label_weight = (conf_arr[idx, :].sum()) / total if total > 0 else 0.0
+            weighted_f1 += f1 * label_weight
 
         split_results[split_name] = {
-            "accuracy":         round(float(mm.accuracy),           4),
-            "weighted_f1":      round(float(mm.weightedFMeasure()),  4),
-            "cohen_kappa":      round(_cohen_kappa(conf_arr),        4),
-            "confusion_matrix": [[int(v) for v in row] for row in conf],
+            "accuracy":         round(float(accuracy), 4),
+            "weighted_f1":      round(float(weighted_f1), 4),
+            "cohen_kappa":      round(_cohen_kappa(conf_arr), 4),
+            "confusion_matrix": conf_arr.tolist(),
             "class_labels":     _CLASS_LABELS,
             "per_class":        per_class,
         }
