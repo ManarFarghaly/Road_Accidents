@@ -7,20 +7,12 @@ from pyspark.sql import functions as F
 from src.models.pipeline import build_model_pipeline
 from src.preprocessing.clean import compute_class_weights, add_class_weights
 
-# ---------------------------------------------------------------------------
-# Internal helpers
-# ---------------------------------------------------------------------------
-
 def _make_evaluator() -> MulticlassClassificationEvaluator:
     return MulticlassClassificationEvaluator(
         labelCol="label",
         predictionCol="prediction",
         metricName="f1",
     )
-
-# ---------------------------------------------------------------------------
-# Public trainers
-# ---------------------------------------------------------------------------
 
 def train_logistic_regression(
     train_df: DataFrame,
@@ -36,7 +28,7 @@ def train_logistic_regression(
         featuresCol="features",
         labelCol="label",
         weightCol="class_weight",
-        family="multinomial", # loss is Multinomial cross-entropy
+        family="multinomial",
         maxIter=100,
     )
     pipeline = build_model_pipeline(lr, preprocessing_stages)
@@ -47,28 +39,11 @@ def train_logistic_regression(
 
     param_grid = (
         ParamGridBuilder()
-        .addGrid(lr.regParam, [0.01, 0.1]) # regularisation to prevent overfitting: penalty to the loss function that punishes large weights
+        .addGrid(lr.regParam, [0.01, 0.1])
         .addGrid(lr.elasticNetParam, [0.0, 0.5])
         .addGrid(lr.maxIter, [50, 100])
         .build()
     )
-    """
-    L2 penalty (elasticNetParam = 0.0) — Ridge
-    Penalizes the square of each weight.
-    Every feature keeps some influence but gets shrunk toward zero.
-    Good when many features are somewhat useful
-    (which is our case — weather, speed, light conditions all matter a bit).
-
-    L1 penalty (elasticNetParam = 1.0) — Lasso
-    Penalizes the absolute value of each weight.
-    Aggressively pushes useless feature weights all the way to exactly zero
-    effectively removing them.
-    Good for very high-dimensional sparse data.
-
-    elasticNetParam = 0.5 — Elastic Net
-    A 50/50 mix: shrinks all weights like L2,
-    but also zeros out the truly irrelevant ones like L1.
-    """
     cv = CrossValidator(
         estimator=pipeline,
         estimatorParamMaps=param_grid,
@@ -88,8 +63,6 @@ def train_random_forest(
     weights = compute_class_weights(train_df)
     weighted_train = add_class_weights(train_df, weights, weight_col="class_weight")
 
-    # loss is Gini impurity (per split)
-    # Gini = 1 - (p_Fatal² + p_Serious² + p_Slight²)
     rf = RandomForestClassifier(
         featuresCol="features",
         labelCol="label",
@@ -101,10 +74,6 @@ def train_random_forest(
         subsamplingRate=0.8,
         seed=42,
     )
-    """
-    Bootstrapping then Aggregating
-    """
-    
     pipeline = build_model_pipeline(rf, preprocessing_stages)
 
     if not use_cv:
@@ -133,8 +102,6 @@ def train_gbt(
     use_cv: bool = False,
     num_folds: int = 3,
 ) -> object:
-    
-    # Balanced training: keep all Fatal + Serious, sample 50% of Slight
     fatal_serious = train_df.filter(F.col("Accident_Severity") != "Slight")
     slight = train_df.filter(F.col("Accident_Severity") == "Slight").sample(fraction=0.5, seed=42)
     balanced_train = fatal_serious.union(slight)

@@ -33,6 +33,6 @@ derby.log
 road_env/
 big_data_venv/
 
-# winutils binaries (downloaded locally by scripts/get_winutils.py)
+# winutils binaries 
 winutils/bin/*.exe
 winutils/bin/*.dll

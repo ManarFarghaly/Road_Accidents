@@ -76,26 +76,17 @@ def generate_weather_aggregations(df) -> Dict:
 def generate_temporal_aggregations(df) -> Dict:
     """
     Aggregate accidents by time patterns.
-    
-    Args:
-        df: PySpark DataFrame with Date and Time columns
-    
-    Returns:
-        Dict with hourly, day-of-week, and monthly distributions
     """
-    # Extract hour from time
     df_temporal = df.withColumn('Hour', F.hour(F.col('Time')))
     df_temporal = df_temporal.withColumn('DayOfWeek', F.dayofweek(F.col('Date')))
     df_temporal = df_temporal.withColumn('Month', F.month(F.col('Date')))
     
-    # Hourly distribution
     hourly = df_temporal.groupby('Hour').agg(
         F.count('*').alias('count')
     ).orderBy('Hour').collect()
     
     hourly_dict = {int(row['Hour']): int(row['count']) for row in hourly}
     
-    # Day of week distribution
     dow_names = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
     dow_dist = df_temporal.groupby('DayOfWeek').agg(
         F.count('*').alias('count')
@@ -103,7 +94,7 @@ def generate_temporal_aggregations(df) -> Dict:
     
     dow_dict = {}
     for row in dow_dist:
-        dow = int(row['DayOfWeek']) - 1  # Convert to 0-6
+        dow = int(row['DayOfWeek']) - 1
         dow_name = dow_names[dow] if 0 <= dow < len(dow_names) else 'Unknown'
         dow_dict[dow_name] = int(row['count'])
     
@@ -116,14 +107,7 @@ def generate_temporal_aggregations(df) -> Dict:
 def generate_location_aggregations(df) -> Dict:
     """
     Aggregate accidents by location density and clusters.
-    
-    Args:
-        df: PySpark DataFrame with location_density and accident_hotspot_cluster
-    
-    Returns:
-        Dict with location-based statistics
     """
-    # Location density
     density_dist = df.groupby('location_density').agg(
         F.count('*').alias('count'),
         F.mean('Number_of_Casualties').alias('avg_casualties')
@@ -137,7 +121,6 @@ def generate_location_aggregations(df) -> Dict:
             'avg_casualties': round(float(row['avg_casualties']), 2)
         }
     
-    # Cluster distribution
     cluster_dist = df.groupby('accident_hotspot_cluster').agg(
         F.count('*').alias('count'),
         F.mean('Number_of_Casualties').alias('avg_casualties')
@@ -160,12 +143,6 @@ def generate_location_aggregations(df) -> Dict:
 def get_null_statistics(df) -> Dict:
     """
     Calculate percentage of null values per column.
-    
-    Args:
-        df: PySpark DataFrame
-    
-    Returns:
-        Dict with null percentages for each column
     """
     total_rows = df.count()
     null_stats = {}
@@ -185,12 +162,6 @@ def get_null_statistics(df) -> Dict:
 def get_numeric_statistics(df) -> Dict:
     """
     Get min, max, mean, stddev for numeric columns.
-    
-    Args:
-        df: PySpark DataFrame
-    
-    Returns:
-        Dict with statistics per numeric column
     """
     numeric_cols = [f.name for f in df.schema.fields 
                    if f.dataType.typeName() in ['integer', 'long', 'float', 'double']]
@@ -218,12 +189,6 @@ def get_numeric_statistics(df) -> Dict:
 def generate_eda_summary(df) -> Dict:
     """
     Generate comprehensive EDA summary report.
-    
-    Args:
-        df: PySpark DataFrame (should be cleaned)
-    
-    Returns:
-        Dict with complete EDA report
     """
     report = {
         'dataset_shape': {
@@ -244,10 +209,6 @@ def generate_eda_summary(df) -> Dict:
 def save_eda_report(report: Dict, output_path: str = 'reports/eda_summary.json'):
     """
     Save EDA report to JSON file.
-    
-    Args:
-        report: Dict from generate_eda_summary()
-        output_path: Path to save JSON report
     """
     with open(output_path, 'w') as f:
         json.dump(report, f, indent=2)

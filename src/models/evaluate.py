@@ -2,10 +2,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import numpy as np
-
-
-# StringIndexer frequencyDesc on Accident_Severity:
-#   0 → Slight (~85 %),  1 → Serious (~14 %),  2 → Fatal (~1 %)
 _LABEL_MAP = {0.0: "Slight", 1.0: "Serious", 2.0: "Fatal"}
 _CLASS_LABELS = [_LABEL_MAP[k] for k in sorted(_LABEL_MAP)]
 
@@ -29,30 +25,19 @@ def evaluate_model(model_name: str, model, train_df, test_df) -> dict:
     """
     Compute accuracy, weighted F1, Cohen's Kappa, confusion matrix, and
     per-class precision/recall/F1 on both train and test splits.
-
-    Returns a dict shaped:
-        {
-          "train": { "accuracy": …, "weighted_f1": …, "cohen_kappa": …,
-                     "confusion_matrix": [[…], …], "class_labels": […],
-                     "per_class": { "Slight": {…}, "Serious": {…}, "Fatal": {…} } },
-          "test":  { … same structure … }
-        }
     """
     split_results: dict = {}
     for split_name, df in [("train", train_df), ("test", test_df)]:
         preds = model.transform(df)
-        # Convert to pandas for reliable, in-memory computation
         pred_label_df = preds.select("prediction", "label").toPandas()
         predictions = pred_label_df["prediction"].astype(float).values
         labels = pred_label_df["label"].astype(float).values
-        
-        # Compute confusion matrix manually
+
         n_classes = 3
         conf_arr = np.zeros((n_classes, n_classes), dtype=int)
         for pred, label in zip(predictions, labels):
             conf_arr[int(label), int(pred)] += 1
-        
-        # Compute metrics from confusion matrix
+
         total = conf_arr.sum()
         accuracy = np.diag(conf_arr).sum() / total if total > 0 else 0.0
         
@@ -74,7 +59,6 @@ def evaluate_model(model_name: str, model, train_df, test_df) -> dict:
                 "recall":    round(float(recall), 4),
                 "f1":        round(float(f1), 4),
             }
-            # Weight by label frequency in test set
             label_weight = (conf_arr[int_idx, :].sum()) / total if total > 0 else 0.0
             weighted_f1 += f1 * label_weight
 

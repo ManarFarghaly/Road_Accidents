@@ -5,7 +5,7 @@ pyspark
 py4j==0.10.9.9
 
 # =========================
-# Data Handling (core stack)
+# Data Handling
 # =========================
 numpy==2.4.4
 pandas

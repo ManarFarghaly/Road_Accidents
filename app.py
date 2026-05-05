@@ -1,29 +1,12 @@
-"""
-UK Road Accidents — Streamlit Analytics Dashboard
-
-Professional analytics dashboard for 2.7M UK road accident records (2005–2017).
-Designed so the critical risk insight is visible within 5 seconds.
-
-Data sources (tried in order):
-  1. reports/eda_summary.json  — pre-computed by src.eda (run src.data.ingest first)
-  2. data/interim/merged.parquet — raw parquet sampled via pyarrow (no Spark needed)
-  3. Built-in demo data         — realistic UK STATS19 distributions, works offline
-
-Run:
-    streamlit run app.py
-"""
 from __future__ import annotations
-
 import json
 from pathlib import Path
-
 import numpy as np
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
-# ─── Page configuration ───────────────────────────────────────────────────────
 st.set_page_config(
     page_title="UK Road Accidents Dashboard",
     page_icon="🚗",
@@ -31,18 +14,16 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
-# ─── Paths ────────────────────────────────────────────────────────────────────
 ROOT     = Path(__file__).resolve().parent
 EDA_JSON = ROOT / "reports" / "eda_summary.json"
 PARQUET  = ROOT / "data" / "interim" / "merged.parquet"
 
-# ─── Design tokens ───────────────────────────────────────────────────────────
 C_TEAL    = "#1abc9c"
 C_CORAL   = "#e74c3c"
 C_BLUE    = "#3498db"
 C_ORANGE  = "#f39c12"
 C_DARK    = "#2c3e50"
-C_MID     = "#566573"  # darkened for WCAG AA (5.5:1 on white)
+C_MID     = "#566573"
 C_LIGHT   = "#ecf0f1"
 C_BG      = "#f4f7f9"
 
@@ -54,7 +35,6 @@ SEV_ORDER  = ["Fatal", "Serious", "Slight"]
 SEV_COLORS = {"Fatal": C_FATAL, "Serious": C_SERIOUS, "Slight": C_SLIGHT}
 DOW_ORDER  = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 
-# ─── Global Plotly template ───────────────────────────────────────────────────
 PLOTLY_LAYOUT = dict(
     font_family="Inter, system-ui, sans-serif",
     font_color=C_DARK,
@@ -68,7 +48,6 @@ PLOTLY_LAYOUT = dict(
     ),
 )
 
-# ─── Custom CSS ──────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
     /* ── Global ── */
@@ -213,10 +192,6 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# Data loading
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def _normalise_severity_keys(sev_dict: dict) -> dict:
     """
@@ -382,11 +357,6 @@ def get_data() -> tuple[dict, pd.DataFrame, str]:
 
     return report, geo, source
 
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# Chart builders
-# ═══════════════════════════════════════════════════════════════════════════════
-
 def fig_severity_donut(sev: dict) -> go.Figure:
     labels, values, colors = [], [], []
     for s in SEV_ORDER:
@@ -511,7 +481,6 @@ def fig_weather(weather: dict) -> go.Figure:
     )
     norm = (rows["avg_casualties"] - rows["avg_casualties"].min())
     norm = norm / norm.max() if norm.max() > 0 else norm
-    # Teal→Coral gradient
     bar_colors = [
         f"rgba({int(27 + (231-27)*v)},{int(188 - (188-76)*v)},{int(156 - (156-60)*v)},0.85)"
         for v in norm
@@ -752,10 +721,6 @@ def fig_uk_map(geo: pd.DataFrame) -> go.Figure:
     return fig
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# Helper: KPI card HTML
-# ═══════════════════════════════════════════════════════════════════════════════
-
 def kpi_card(label: str, value: str, delta: str, delta_dir: str, accent: str) -> str:
     """
     Render a white KPI card with a coloured bottom accent strip.
@@ -779,10 +744,6 @@ def chart_card(title: str, fig, key: str) -> None:
                     config={"displayModeBar": False}, key=key)
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# Dashboard layout
-# ═══════════════════════════════════════════════════════════════════════════════
-
 def main() -> None:
     report, geo, source = get_data()
 
@@ -792,7 +753,6 @@ def main() -> None:
     loc   = report.get("location_analysis", {})
     shape = report.get("dataset_shape", {})
 
-    # Pre-compute KPIs
     total        = shape.get("total_rows", sum(v["count"] for v in sev.values()))
     fatal_cnt    = sev.get("Fatal",   {}).get("count",      0)
     fatal_pct    = sev.get("Fatal",   {}).get("percentage", 0.0)
@@ -803,7 +763,6 @@ def main() -> None:
     clear_cas    = wx.get("Fine no high winds", {}).get("avg_casualties", 1)
     fog_uplift   = ((fog_cas / clear_cas) - 1) * 100 if clear_cas else 0
 
-    # ── Top bar ──────────────────────────────────────────────────────────────
     st.markdown(f"""
     <div class="topbar">
         <div>
@@ -814,7 +773,6 @@ def main() -> None:
 
     st.markdown('<div class="page-body">', unsafe_allow_html=True)
 
-    # ── Row 1: KPI cards ─────────────────────────────────────────────────────
     st.markdown('<p class="section-label">Key Metrics</p>', unsafe_allow_html=True)
     k1, k2, k3, k4, k5 = st.columns(5)
     k1.markdown(kpi_card(
@@ -835,7 +793,6 @@ def main() -> None:
 
     st.markdown("<div style='height:0.25rem'></div>", unsafe_allow_html=True)
 
-    # ── Row 2: Severity donut | Hourly bar | Day of week ─────────────────────
     st.markdown('<p class="section-label">Severity & Temporal Patterns</p>',
                 unsafe_allow_html=True)
     c1, gap1, c2, gap2, c3 = st.columns([1, 0.04, 1.6, 0.04, 1])
@@ -867,7 +824,6 @@ def main() -> None:
 
     st.markdown("<div style='height:0.2rem'></div>", unsafe_allow_html=True)
 
-    # ── Row 3: Weather | Location density | Map ───────────────────────────────
     st.markdown('<p class="section-label">Risk Factors & Geography</p>',
                 unsafe_allow_html=True)
     c4, gap3, c5, gap4, c6 = st.columns([1.5, 0.04, 0.85, 0.04, 1.4])
@@ -902,7 +858,6 @@ def main() -> None:
                         config={"displayModeBar": False}, key="map")
         st.markdown('</div>', unsafe_allow_html=True)
 
-    # ── Row 4: Model Evaluation ──────────────────────────────────────────────
     model_metrics = load_model_metrics()
     if model_metrics:
         models_data = model_metrics.get("models", {})
@@ -918,7 +873,6 @@ def main() -> None:
 
         model_names = list(models_data.keys())
 
-        # Render one block per model (tabs when multiple models are present)
         if len(model_names) > 1:
             tab_contexts = st.tabs(model_names)
         else:
@@ -930,7 +884,6 @@ def main() -> None:
                 test_d = mdata.get("test",  {})
                 trn_d  = mdata.get("train", {})
 
-                # ── KPI row: 3 test metrics + 3 train metrics ─────────────
                 mk1, mk2, mk3, mk4, mk5, mk6 = st.columns(6)
                 mk1.markdown(kpi_card(
                     "Train Accuracy", f"{trn_d.get('accuracy', 0):.2%}",
@@ -953,7 +906,6 @@ def main() -> None:
 
                 st.markdown("<div style='height:0.25rem'></div>", unsafe_allow_html=True)
 
-                # ── Charts row: metric bar | confusion matrix ─────────────
                 mc1, mgap, mc2 = st.columns([1.1, 0.04, 1])
                 with mc1:
                     st.markdown(
@@ -980,7 +932,6 @@ def main() -> None:
 
                 st.markdown("<div style='height:0.2rem'></div>", unsafe_allow_html=True)
 
-                # ── Per-class bar (full width) ────────────────────────────
                 st.markdown(
                     '<div class="chart-card">'
                     '<p class="chart-title">Per-Class Precision / Recall / F1 — Test Set</p></div>',
@@ -992,7 +943,6 @@ def main() -> None:
                     key=f"per_class_{model_name}",
                 )
 
-    # ── Footer ───────────────────────────────────────────────────────────────
     st.markdown(f"""
     <div class="dash-footer">
         Data: {source} &nbsp;·&nbsp;
@@ -1000,7 +950,7 @@ def main() -> None:
         Map: {len(geo):,} sampled locations
     </div>""", unsafe_allow_html=True)
 
-    st.markdown('</div>', unsafe_allow_html=True)  # close page-body
+    st.markdown('</div>', unsafe_allow_html=True)
 
 
 if __name__ == "__main__":

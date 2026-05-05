@@ -5,18 +5,13 @@ from functools import reduce
 from pyspark.sql import DataFrame, Window, functions as F
 from pyspark.ml.feature import Imputer
 
-
-# 
-# Column lists
-# 
-
 HIGH_MISSING_COLS = [
-    "Carriageway_Hazards",            # 98.07 %
-    "Special_Conditions_at_Site",     # 97.45 %
-    "Hit_Object_in_Carriageway",      # 95.89 %
-    "Hit_Object_off_Carriageway",     # 91.39 %
-    "Skidding_and_Overturning",       # 87.19 %
-    "2nd_Road_Class",                 # 41 % NA + 40 % "Unclassified" = 81 % noise
+    "Carriageway_Hazards",
+    "Special_Conditions_at_Site",
+    "Hit_Object_in_Carriageway",
+    "Hit_Object_off_Carriageway",
+    "Skidding_and_Overturning",
+    "2nd_Road_Class",
     "wpgt", "prcp", "snwd", "tsun", "cldc",
 ]
 
@@ -60,14 +55,13 @@ NUMERIC_CAST_COLS = [
 ]
 
 NUM_IMPUTE_COLS = [
-    "Age_of_Vehicle",        # 16 % missing
-    "Engine_Capacity_CC",    # 12 % missing
-    "Driver_IMD_Decile",     # 34 % missing
+    "Age_of_Vehicle",
+    "Engine_Capacity_CC",
+    "Driver_IMD_Decile",
     "Location_Easting_OSGR",
     "Location_Northing_OSGR",
     "Was_Vehicle_Left_Hand_Drive",
     "InScotland" ,
-    # Weather — MCAR
     "tmin", "tmax", "pres", "temp", "rhum", "wspd",
 ]
 
@@ -80,7 +74,6 @@ MODE_IMPUTE_COLS = [
     "Propulsion_Code",
     "Towing_and_Articulation",
     "Age_Band_of_Driver",
-   
 ]
 
 GROUP_MODE_IMPUTE = [
@@ -102,10 +95,6 @@ CAT_IMPUTE_COLS = [
 
 LABEL_COL = "Accident_Severity"
 
-
-# 
-# Helpers
-# 
 
 def _fill_mode_by_group(df: DataFrame, target: str, group: str) -> DataFrame:
     if target not in df.columns or group not in df.columns:
@@ -144,28 +133,11 @@ def _fill_mode_by_group(df: DataFrame, target: str, group: str) -> DataFrame:
 
 
 def _build_select_exprs(df: DataFrame) -> list:
-    """
-    Build ONE expression per column that combines ALL scalar transforms:
-      - rename Engine_Capacity_.CC. → Engine_Capacity_CC
-      - cast numerics to double
-      - null out sentinel strings
-      - null out negative sentinel (-1) for numerics
-      - snap Speed_limit to nearest legal value
-      - enforce validity bounds
-      - fix Day_of_Week from Date
-      - fix Age_Band_of_Driver
-      - normalise Sex_of_Driver
-      - cast InScotland → 0.0 / 1.0
-
-    Result: a single .select() call → ONE Project node in the query plan.
-    """
     schema_map = {f.name: f.dataType.simpleString() for f in df.schema.fields}
     exprs = []
 
-    # Columns to skip (dropped before this call, or renamed)
     skip = set(HIGH_MISSING_COLS + LEAKAGE_COLS)
 
-    # Handle rename: Engine_Capacity_.CC. → Engine_Capacity_CC
     rename_map = {"Engine_Capacity_.CC.": "Engine_Capacity_CC"
     , "Vehicle_Location.Restricted_Lane": "Vehicle_Location_Restricted_Lane"
     }
@@ -177,14 +149,12 @@ def _build_select_exprs(df: DataFrame) -> list:
 
         out_name = rename_map.get(raw_name, raw_name)
         dtype    = schema_map.get(raw_name, "string")
-        c        = F.col(f"`{raw_name}`")   # backtick escapes dots/parens in col names
+        c        = F.col(f"`{raw_name}`")
 
-        #  1. Cast to double for numeric columns ─
         if out_name in NUMERIC_CAST_COLS:
             c = c.cast("double")
             dtype = "double"
 
-        #  2. InScotland → binary float 
         if out_name == "InScotland":
             c = (F.when(c == "Yes", 1.0)
                   .when(c == "No",  0.0)
@@ -194,34 +164,28 @@ def _build_select_exprs(df: DataFrame) -> list:
         if out_name == "Was_Vehicle_Left_Hand_Drive":
             c = (F.when(c.isin("2", "Yes", "yes"), 1.0)
                   .when(c.isin("1", "No",  "no"),  0.0)
-                  .otherwise(None))          # Imputer will fill median (0.0)
+                  .otherwise(None))
             exprs.append(c.alias(out_name))
             continue
 
-        #  3. Null sentinel strings 
         if dtype == "string":
             c = F.when(c.isin(SENTINEL_STRINGS), None).otherwise(c)
 
-        #  4. Age_Band_of_Driver — null invalid codes 
         if out_name == "Age_Band_of_Driver":
             c = F.when(c.isin(VALID_AGE_BANDS), c).otherwise(None)
 
-        #  5. Sex_of_Driver — normalise M/F/1/2/3 ─
         if out_name == "Sex_of_Driver":
             c = (F.when(c.isin(["M", "1"]), "Male")
                   .when(c.isin(["F", "2"]), "Female")
                   .when(c == "3",           "Not known")
                   .otherwise(c))
 
-        #  6. Day_of_Week — re-derive from Date (source of truth) 
         if out_name == "Day_of_Week":
             c = F.date_format(F.col("`Date`"), "EEEE")
 
-        #  7. Null negative sentinels for numerics ─
         if out_name in NUM_IMPUTE_COLS and dtype in ("double", "float"):
             c = F.when(c < 0, None).otherwise(c)
 
-        #  8. Speed_limit — snap to nearest legal value 
         if out_name == "Speed_limit":
             legal = c.isin(UK_LEGAL_SPEED_LIMITS)
             snapped = (
@@ -231,31 +195,21 @@ def _build_select_exprs(df: DataFrame) -> list:
             )
             c = F.when(c.isNull(), c).when(legal, c).otherwise(snapped)
 
-        #  9. Validity bounds → NULL ─
         if out_name in VALIDITY_BOUNDS:
             lo, hi = VALIDITY_BOUNDS[out_name]
             c = F.when((c < lo) | (c > hi), None).otherwise(c)
 
-        #  10. Location OSGR fallback constants 
         if out_name == "Location_Easting_OSGR":
             c = F.when(c.isNull() | F.isnan(c), F.lit(443666.0)).otherwise(c)
         if out_name == "Location_Northing_OSGR":
             c = F.when(c.isNull() | F.isnan(c), F.lit(259090.0)).otherwise(c)
 
         exprs.append(c.alias(out_name))
-    exprs.append(
-            ((F.col("`Latitude`") * 2).cast("int") / 2).alias("lat_bin")
-        )
-    exprs.append(
-            ((F.col("`Longitude`") * 2).cast("int") / 2).alias("lon_bin")
-        )
+    exprs.append(((F.col("`Latitude`") * 2).cast("int") / 2).alias("lat_bin"))
+    exprs.append(((F.col("`Longitude`") * 2).cast("int") / 2).alias("lon_bin"))
 
     return exprs
 
-
-# 
-# Main entry point
-# 
 
 def clean(df: DataFrame) -> DataFrame:
     """
@@ -265,25 +219,19 @@ def clean(df: DataFrame) -> DataFrame:
       - Imputer + group-mode fill run after a lineage-breaking cache()
     """
 
-    # a ─ drop noise + leakage columns up front
     to_drop = [c for c in HIGH_MISSING_COLS + LEAKAGE_COLS if c in df.columns]
     if to_drop:
         df = df.drop(*to_drop)
 
-    #  SINGLE SELECT — all scalar transforms in one Project node ─
-    # Replaces: rename loop + cast loop + sentinel loop + sentinel-numeric loop
-    #         + snap_speed + validity-bounds loop + InScotland + DayOfWeek fix
     exprs = _build_select_exprs(df)
     df = df.select(exprs)
 
-    #  SINGLE FILTER — all required-col null checks in one Filter node ─
     present_required = [c for c in REQUIRED_COLS if c in df.columns]
     if present_required:
         combined = reduce(lambda a, b: a & b,
                           [F.col(c).isNotNull() for c in present_required])
         df = df.filter(combined)
 
-    #  MODE impute — simple global mode (no join, no plan growth) 
     mode_present = [c for c in MODE_IMPUTE_COLS if c in df.columns]
     for c in mode_present:
         mode_row = (
@@ -295,7 +243,6 @@ def clean(df: DataFrame) -> DataFrame:
         if mode_row:
             df = df.fillna({c: mode_row[0]})
 
-    #  Numeric median impute ─
     num_present = [
         c for c in NUM_IMPUTE_COLS
         if c in df.columns
@@ -309,21 +256,16 @@ def clean(df: DataFrame) -> DataFrame:
         )
         df = imputer.fit(df).transform(df)
 
-    #  Group-mode fill — cache first to avoid replaying full pipeline 
-    # cache() + count() materialises the DataFrame so the Window aggregation
-    # runs on stable data, not a re-executed chain of transforms.
     df.cache()
     df.count()
 
     for target, group in GROUP_MODE_IMPUTE:
         df = _fill_mode_by_group(df, target, group)
 
-    #  Remaining categoricals → "Unknown" level 
     cat_present = [c for c in CAT_IMPUTE_COLS if c in df.columns]
     if cat_present:
         df = df.fillna("Unknown", subset=cat_present)
 
-    #  Dot-column fillna — fillna(subset) cannot handle dots in names 
     DOT_CAT_COLS = ["Vehicle_Location.Restricted_Lane"]
     for c in DOT_CAT_COLS:
         if c in df.columns:

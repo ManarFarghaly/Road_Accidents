@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import socket
+
 from pyspark.ml import Pipeline
 from pyspark.sql import functions as F
 from pyspark.ml.feature import VectorAssembler
@@ -32,31 +34,23 @@ def main():
     PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
     INTERIM_DIR.mkdir(parents=True, exist_ok=True)
 
-    # Match ingest hardening for Windows + Python 3.13 Py4J stability.
     socket.setdefaulttimeout(1800)
 
     spark = get_spark("preprocessing")
     spark.sparkContext.setLogLevel("WARN")
 
-    # ── 1. Load full merged dataset ────────────────────────────────────────
     print(f"\n[1] Loading full dataset from {MERGED_PARQUET} ...")
     df = spark.read.parquet(str(MERGED_PARQUET))
     total = df.count()
     print(f"    Raw rows: {total:,}, columns: {len(df.columns)}")
 
-    # ── 2. Clean ───────────────────────────────────────────────────────────
     print("\n[2] Cleaning full dataset ...")
     cleaned = clean(df)
 
-    # ── CRITICAL: checkpoint after clean() ────────────────────────────────
-    # clean() produces a deep plan (Imputer + Window join + select chain).
-    # Writing to parquet and re-reading gives downstream steps a flat scan
-    # with a single Project node — no StackOverflowError on split/fit/transform.
     CLEAN_CHECKPOINT = str(INTERIM_DIR / "cleaned.parquet")
     print(f"\n    Checkpointing cleaned data → {CLEAN_CHECKPOINT}")
     cleaned.write.mode("overwrite").parquet(CLEAN_CHECKPOINT)
     cleaned = spark.read.parquet(CLEAN_CHECKPOINT)
-    # ── end checkpoint ─────────────────────────────────────────────────────
 
     cleaned_count = cleaned.count()
     dropped = total - cleaned_count
@@ -65,12 +59,9 @@ def main():
     print("\n    Label distribution (full cleaned):")
     cleaned.groupBy("Accident_Severity").count().orderBy("Accident_Severity").show()
 
-    # ── 3. Train / Test split — after checkpoint, plan is flat ────────────
     print("\n[3] Splitting 80/20 train/test ...")
     train_raw, test = cleaned.randomSplit([0.8, 0.2], seed=42)
 
-    # Checkpoint splits too — prevents the random split from being
-    # re-executed independently for fit() and transform()
     TRAIN_RAW_PATH = str(INTERIM_DIR / "train_raw.parquet")
     TEST_RAW_PATH  = str(INTERIM_DIR / "test_raw.parquet")
     train_raw.write.mode("overwrite").parquet(TRAIN_RAW_PATH)
@@ -82,7 +73,6 @@ def main():
     test_count  = test.count()
     print(f"    Train: {train_count:,}  |  Test: {test_count:,}")
 
-    # ── 4. Rebalance training split only ──────────────────────────────────
     print("\n[4] Computing class weights on training split ...")
     weights = compute_class_weights(train_raw)
     print(f"    Weights: { {k: f'{v:.2f}' for k, v in weights.items()} }")
@@ -92,19 +82,16 @@ def main():
     train, test = fit_and_apply_target_encodings(train, test, smoothing=10.0)
     print(f"    Added columns: {[c + '_te' for c in ['model', 'LSOA_of_Accident_Location']]}")
 
-    # ── 5. Fit preprocessing pipeline on training data ONLY ───────────────
     print("\n[5] Fitting preprocessing pipeline on training data ...")
     stages = build_preprocessing_stages()
     pipeline = Pipeline(stages=stages)
     model = pipeline.fit(train)
     print(f"    Pipeline fitted with {len(stages)} stages.")
-    # After model = pipeline.fit(train)
     assembler = [s for s in model.stages if isinstance(s, VectorAssembler)][0]
     print(f"\n    Assembler input cols ({len(assembler.getInputCols())}):")
     for c in assembler.getInputCols():
         print(f"      {c}")
 
-    # ── 6. Transform ──────────────────────────────────────────────────────
     print("\n[6] Transforming train and test splits ...")
     train_out = model.transform(train)
     test_out  = model.transform(test)
@@ -115,10 +102,8 @@ def main():
     )
     test_final = test_out.select(
         [c for c in ["features", "label"] if c in test_out.columns]
-        # classWeight is NOT added to test — correct: weights are training-only
     )
 
-    # ── 7. Write processed output ──────────────────────────────────────────
     train_path = str(PROCESSED_DIR / "train.parquet")
     test_path  = str(PROCESSED_DIR / "test.parquet")
 
@@ -128,7 +113,6 @@ def main():
     test_final.write.mode("overwrite").parquet(test_path)
     print(f"    Test  → {test_path}")
 
-    # ── 8. Sanity check ───────────────────────────────────────────────────
     print("\n[8] Sanity check on written data ...")
     tr = spark.read.parquet(train_path)
     te = spark.read.parquet(test_path)
