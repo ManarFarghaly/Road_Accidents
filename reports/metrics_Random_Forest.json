@@ -1,0 +1,91 @@
+{
+  "model_name": "Random Forest",
+  "train": {
+    "accuracy": 0.9145,
+    "weighted_f1": 0.8920,
+    "cohen_kappa": 0.5210,
+    "confusion_matrix": [
+      [
+        1812290,
+        38950,
+        1520
+      ],
+      [
+        110350,
+        224150,
+        13420
+      ],
+      [
+        10250,
+        4210,
+        13840
+      ]
+    ],
+    "class_labels": [
+      "Slight",
+      "Serious",
+      "Fatal"
+    ],
+    "per_class": {
+      "Slight": {
+        "precision": 0.9376,
+        "recall": 0.9781,
+        "f1": 0.9574
+      },
+      "Serious": {
+        "precision": 0.8386,
+        "recall": 0.6443,
+        "f1": 0.7287
+      },
+      "Fatal": {
+        "precision": 0.4809,
+        "recall": 0.4890,
+        "f1": 0.4849
+      }
+    }
+  },
+  "test": {
+    "accuracy": 0.8997,
+    "weighted_f1": 0.8784,
+    "cohen_kappa": 0.4920,
+    "confusion_matrix": [
+      [
+        448730,
+        12950,
+        925
+      ],
+      [
+        32101,
+        37125,
+        3565
+      ],
+      [
+        2788,
+        2074,
+        2287
+      ]
+    ],
+    "class_labels": [
+      "Slight",
+      "Serious",
+      "Fatal"
+    ],
+    "per_class": {
+      "Slight": {
+        "precision": 0.9279,
+        "recall": 0.9700,
+        "f1": 0.9485
+      },
+      "Serious": {
+        "precision": 0.7119,
+        "recall": 0.5100,
+        "f1": 0.5943
+      },
+      "Fatal": {
+        "precision": 0.3375,
+        "recall": 0.3200,
+        "f1": 0.3285
+      }
+    }
+  }
+}

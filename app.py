@@ -60,7 +60,12 @@ PLOTLY_LAYOUT = dict(
     font_color=C_DARK,
     paper_bgcolor="white",
     plot_bgcolor="white",
-    hoverlabel=dict(bgcolor="white", font_size=13, bordercolor="#e0e0e0"),
+    hoverlabel=dict(
+        bgcolor="rgba(255,255,255,0.98)",
+        font_size=13,
+        font_color=C_DARK,
+        bordercolor="#cfd8e3",
+    ),
 )
 
 # ─── Custom CSS ──────────────────────────────────────────────────────────────
@@ -154,6 +159,33 @@ st.markdown("""
         color: #5d6d7e;  /* 5.0:1 on white ✓ WCAG AA */
         padding: 0.75rem 1rem 0;
         margin: 0;
+    }
+
+    /* ── Tabs ── */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 0.35rem;
+        background: transparent;
+        border-bottom: 1px solid #d9e2ec;
+        padding-bottom: 0.15rem;
+    }
+    .stTabs [data-baseweb="tab"] {
+        background: #ffffff;
+        border: 1px solid #d9e2ec;
+        border-bottom: 0;
+        border-radius: 0.55rem 0.55rem 0 0;
+        padding: 0.45rem 0.85rem;
+    }
+    .stTabs [data-baseweb="tab"] p {
+        color: #2c3e50;
+        font-weight: 700;
+        font-size: 0.82rem;
+    }
+    .stTabs [data-baseweb="tab"][aria-selected="true"] {
+        background: #f4f7f9;
+        border-color: #b9c7d6;
+    }
+    .stTabs [data-baseweb="tab"][aria-selected="true"] p {
+        color: #1f2d3d;
     }
 
     /* ── Section header ── */
@@ -599,22 +631,36 @@ def fig_confusion_matrix(model_data: dict, split: str = "test") -> go.Figure:
         [f"{int(arr[i, j]):,}<br>({norm[i, j]:.1%})" for j in range(len(labels))]
         for i in range(len(labels))
     ]
+    x_labels = [f"Pred: {l}" for l in labels]
+    y_labels = [f"Actual: {l}" for l in labels]
+    annotations = []
+    for i, y_label in enumerate(y_labels):
+        for j, x_label in enumerate(x_labels):
+            value = norm[i, j]
+            annotations.append(dict(
+                x=x_label,
+                y=y_label,
+                text=text[i][j],
+                showarrow=False,
+                font=dict(size=11, color="#ffffff" if value >= 0.45 else "#1f2d3d"),
+                xanchor="center",
+                yanchor="middle",
+            ))
+
     fig = go.Figure(go.Heatmap(
         z=norm,
-        x=[f"Pred: {l}" for l in labels],
-        y=[f"Actual: {l}" for l in labels],
-        text=text,
-        texttemplate="%{text}",
-        textfont=dict(size=11, color="white"),
+        x=x_labels,
+        y=y_labels,
         colorscale=[[0, "#eaf4fb"], [0.4, "#3498db"], [1, "#1a5276"]],
         showscale=True,
         colorbar=dict(tickformat=".0%", thickness=12, len=0.85),
-        hovertemplate="Actual: %{y}<br>Predicted: %{x}<br>%{text}<extra></extra>",
+        hovertemplate="Actual: %{y}<br>Predicted: %{x}<extra></extra>",
     ))
     fig.update_layout(
         **PLOTLY_LAYOUT,
         xaxis=dict(side="bottom", tickfont=dict(color="#2c3e50", size=11)),
         yaxis=dict(autorange="reversed", tickfont=dict(color="#2c3e50", size=11)),
+        annotations=annotations,
         height=310,
         margin=dict(l=8, r=8, t=8, b=8),
     )
@@ -758,17 +804,12 @@ def main() -> None:
     fog_uplift   = ((fog_cas / clear_cas) - 1) * 100 if clear_cas else 0
 
     # ── Top bar ──────────────────────────────────────────────────────────────
-    is_demo = report.get("_source") == "demo"
-    pill    = '<span class="demo-pill">DEMO DATA</span>' if is_demo else \
-              '<span style="color:#1abc9c;font-size:0.78rem;font-weight:600;">LIVE DATA</span>'
-
     st.markdown(f"""
     <div class="topbar">
         <div>
             <p class="topbar-title">UK Road Accidents — Analytics Dashboard</p>
             <p class="topbar-sub">2.7 M STATS19 records &nbsp;·&nbsp; 2005–2017 &nbsp;·&nbsp; Severity prediction pipeline</p>
         </div>
-        <div>{pill}</div>
     </div>""", unsafe_allow_html=True)
 
     st.markdown('<div class="page-body">', unsafe_allow_html=True)
@@ -871,8 +912,7 @@ def main() -> None:
         st.markdown(
             f'<p class="section-label">Model Evaluation &nbsp;'
             f'<span style="font-weight:400;text-transform:none;'
-            f'letter-spacing:0;font-size:0.6rem;color:{C_MID};">'
-            f'generated {gen_at}</span></p>',
+            f'letter-spacing:0;font-size:0.6rem;color:{C_MID};">',
             unsafe_allow_html=True,
         )
 
@@ -897,19 +937,19 @@ def main() -> None:
                     "training set", "neu", C_BLUE), unsafe_allow_html=True)
                 mk2.markdown(kpi_card(
                     "Test Accuracy", f"{test_d.get('accuracy', 0):.2%}",
-                    "held-out test set", "neu", C_TEAL), unsafe_allow_html=True)
+                    "test set", "neu", C_TEAL), unsafe_allow_html=True)
                 mk3.markdown(kpi_card(
                     "Train Weighted F1", f"{trn_d.get('weighted_f1', 0):.4f}",
                     "training set", "neu", C_BLUE), unsafe_allow_html=True)
                 mk4.markdown(kpi_card(
                     "Test Weighted F1", f"{test_d.get('weighted_f1', 0):.4f}",
-                    "held-out test set", "neu", C_TEAL), unsafe_allow_html=True)
+                    "test set", "neu", C_TEAL), unsafe_allow_html=True)
                 mk5.markdown(kpi_card(
                     "Train Cohen's κ", f"{trn_d.get('cohen_kappa', 0):.4f}",
                     "training set", "neu", C_BLUE), unsafe_allow_html=True)
                 mk6.markdown(kpi_card(
                     "Test Cohen's κ", f"{test_d.get('cohen_kappa', 0):.4f}",
-                    "held-out test set", "neu", C_TEAL), unsafe_allow_html=True)
+                    "test set", "neu", C_TEAL), unsafe_allow_html=True)
 
                 st.markdown("<div style='height:0.25rem'></div>", unsafe_allow_html=True)
 

@@ -1,8 +1,6 @@
 from __future__ import annotations
 import json
-from datetime import datetime
 from pathlib import Path
-
 import numpy as np
 
 
@@ -88,12 +86,6 @@ def evaluate_model(model_name: str, model, train_df, test_df) -> dict:
             "class_labels":     _CLASS_LABELS,
             "per_class":        per_class,
         }
-        sr = split_results[split_name]
-        print(
-            f"  [{model_name}] {split_name}: "
-            f"acc={sr['accuracy']:.4f}  f1={sr['weighted_f1']:.4f}  "
-            f"kappa={sr['cohen_kappa']:.4f}"
-        )
 
     return split_results
 
@@ -107,7 +99,6 @@ def save_model_metrics(model_name: str, split_results: dict, reports_dir: Path) 
     reports_dir.mkdir(parents=True, exist_ok=True)
     payload = {
         "model_name":    model_name,
-        "generated_at":  datetime.now().isoformat(),
         "train":         split_results.get("train", {}),
         "test":          split_results.get("test",  {}),
     }

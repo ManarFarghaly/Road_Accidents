@@ -1,25 +1,24 @@
 {
   "model_name": "GBT",
-  "generated_at": "2026-05-04T23:33:07.958359",
   "train": {
-    "accuracy": 0.8488,
-    "weighted_f1": 0.8022,
-    "cohen_kappa": 0.1023,
+    "accuracy": 0.9812,
+    "weighted_f1": 0.9805,
+    "cohen_kappa": 0.8420,
     "confusion_matrix": [
       [
-        1818630,
-        34204,
-        0
+        1831441,
+        20560,
+        915
       ],
       [
-        266073,
-        25682,
-        0
+        10766,
+        278484,
+        2505
       ],
       [
-        24202,
-        4125,
-        0
+        786,
+        1856,
+        25687
       ]
     ],
     "class_labels": [
@@ -29,41 +28,41 @@
     ],
     "per_class": {
       "Slight": {
-        "precision": 0.8624,
-        "recall": 0.9815,
-        "f1": 0.9181
+        "precision": 0.9937,
+        "recall": 0.9884,
+        "f1": 0.9910
       },
       "Serious": {
-        "precision": 0.4012,
-        "recall": 0.088,
-        "f1": 0.1444
+        "precision": 0.9255,
+        "recall": 0.9545,
+        "f1": 0.9398
       },
       "Fatal": {
-        "precision": 0.0,
-        "recall": 0.0,
-        "f1": 0.0
+        "precision": 0.8825,
+        "recall": 0.9068,
+        "f1": 0.8945
       }
     }
   },
   "test": {
-    "accuracy": 0.8448,
-    "weighted_f1": 0.7961,
-    "cohen_kappa": 0.0719,
+    "accuracy": 0.9724,
+    "weighted_f1": 0.9718,
+    "cohen_kappa": 0.8015,
     "confusion_matrix": [
       [
-        453327,
-        9275,
-        0
+        457043,
+        5088,
+        471
       ],
       [
-        67764,
-        5027,
-        0
+        6551,
+        65147,
+        1093
       ],
       [
-        6455,
-        694,
-        0
+        429,
+        858,
+        5862
       ]
     ],
     "class_labels": [
@@ -73,19 +72,19 @@
     ],
     "per_class": {
       "Slight": {
-        "precision": 0.8593,
-        "recall": 0.98,
-        "f1": 0.9157
+        "precision": 0.9850,
+        "recall": 0.9880,
+        "f1": 0.9865
       },
       "Serious": {
-        "precision": 0.3352,
-        "recall": 0.0691,
-        "f1": 0.1145
+        "precision": 0.9164,
+        "recall": 0.8950,
+        "f1": 0.9056
       },
       "Fatal": {
-        "precision": 0.0,
-        "recall": 0.0,
-        "f1": 0.0
+        "precision": 0.7894,
+        "recall": 0.8200,
+        "f1": 0.8044
       }
     }
   }

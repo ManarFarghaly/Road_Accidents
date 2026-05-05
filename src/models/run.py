@@ -1,8 +1,6 @@
 from __future__ import annotations
 import os
-import time
 from pathlib import Path
-from pyspark.ml.evaluation import MulticlassClassificationEvaluator
 from src.config import MERGED_PARQUET, PROJECT_ROOT, get_spark
 from src.preprocessing import build_preprocessing_stages, clean
 from src.preprocessing.run import fit_and_apply_target_encodings
@@ -13,46 +11,11 @@ from src.models.evaluate import evaluate_model, save_model_metrics
 
 MODELS_DIR   = PROJECT_ROOT / "models"
 REPORTS_DIR  = PROJECT_ROOT / "reports"
-METRICS_PATH = MODELS_DIR   / "metrics.txt"
 
 USE_CV_LR  = os.getenv("USE_CV_LR",  "true").lower()  == "true"
 USE_CV_RF  = os.getenv("USE_CV_RF",  "true").lower()  == "true"
 USE_CV_GBT = os.getenv("USE_CV_GBT", "false").lower() == "true"
 
-
-def _write_metrics_header(metrics_path: Path) -> None:
-    metrics_path.write_text(
-        "Road Accidents model evaluation results\n"
-        "=======================================\n\n",
-        encoding="utf-8",
-    )
-
-
-def _evaluate_and_log(model_name: str, model, test_df, metrics_path: Path) -> None:
-    evaluator_acc = MulticlassClassificationEvaluator(
-        labelCol="label",
-        predictionCol="prediction",
-        metricName="accuracy",
-    )
-    evaluator_f1 = MulticlassClassificationEvaluator(
-        labelCol="label",
-        predictionCol="prediction",
-        metricName="f1",
-    )
-
-    predictions = model.transform(test_df)
-    accuracy = evaluator_acc.evaluate(predictions)
-    f1_score = evaluator_f1.evaluate(predictions)
-
-    line = (
-        f"[{model_name}] Test accuracy = {accuracy:.4f}, "
-        f"weighted-F1 = {f1_score:.4f}\n"
-    )
-
-    with open(metrics_path, "a", encoding="utf-8") as out_f:
-        out_f.write(line)
-
-    print(line.strip())
 
 
 def main() -> None:
@@ -60,8 +23,7 @@ def main() -> None:
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
 
     spark = get_spark("road-accidents-training")
-    wall_start = time.time()
-    _write_metrics_header(METRICS_PATH)
+
 
     # 1. Load & clean raw data
     raw_df = spark.read.parquet(str(MERGED_PARQUET))
@@ -77,36 +39,33 @@ def main() -> None:
     # 3. Shared preprocessing stages (fit inside each Pipeline)
     preprocessing_stages = build_preprocessing_stages()
 
-    # # 4. Train Logistic Regression (Baseline)
-    # lr_model = train_logistic_regression(
-    #     train_df, preprocessing_stages, use_cv=USE_CV_LR
-    # )
-    # save_model(lr_model, MODELS_DIR / "lr")
-    # _evaluate_and_log("Logistic Regression", lr_model, test_df, METRICS_PATH)
-    # save_model_metrics(
-    #     "Logistic Regression",
-    #     evaluate_model("Logistic Regression", lr_model, train_df, test_df),
-    #     REPORTS_DIR,
-    # )
+    # 4. Train Logistic Regression (Baseline)
+    lr_model = train_logistic_regression(
+        train_df, preprocessing_stages, use_cv=USE_CV_LR
+    )
+    save_model(lr_model, MODELS_DIR / "lr")
+    save_model_metrics(
+        "Logistic Regression",
+        evaluate_model("Logistic Regression", lr_model, train_df, test_df),
+        REPORTS_DIR,
+    )
 
-    # # 5. Train Random Forest
-    # rf_model = train_random_forest(
-    #     train_df, preprocessing_stages, use_cv=USE_CV_RF
-    # )
-    # save_model(rf_model, MODELS_DIR / "rf")
-    # _evaluate_and_log("Random Forest", rf_model, test_df, METRICS_PATH)
-    # save_model_metrics(
-    #     "Random Forest",
-    #     evaluate_model("Random Forest", rf_model, train_df, test_df),
-    #     REPORTS_DIR,
-    # )
+    # 5. Train Random Forest
+    rf_model = train_random_forest(
+        train_df, preprocessing_stages, use_cv=USE_CV_RF
+    )
+    save_model(rf_model, MODELS_DIR / "rf")
+    save_model_metrics(
+        "Random Forest",
+        evaluate_model("Random Forest", rf_model, train_df, test_df),
+        REPORTS_DIR,
+    )
 
-    # # 6. Train Gradient-Boosted Trees
+    # 6. Train Gradient-Boosted Trees
     gbt_model = train_gbt(
         train_df, preprocessing_stages, use_cv=USE_CV_GBT
     )
     save_model(gbt_model, MODELS_DIR / "gbt")
-    _evaluate_and_log("GBT", gbt_model, test_df, METRICS_PATH)
     save_model_metrics(
         "GBT",
         evaluate_model("GBT", gbt_model, train_df, test_df),
